@@ -12,6 +12,7 @@ import '../utils/time_utils.dart';
 import '../widgets/entry_bubble.dart';
 import '../widgets/date_header.dart';
 import '../widgets/input_bar.dart';
+import '../services/export_service.dart';
 import 'entry_edit_screen.dart';
 
 class NotebookScreen extends StatefulWidget {
@@ -386,6 +387,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   case 'edit':
                     _showEditNotebookDialog();
                     break;
+                  case 'export':
+                    _exportNotebook();
+                    break;
                   case 'archive':
                     await context.read<NotebooksProvider>().toggleArchive(
                       _notebook.id,
@@ -401,6 +405,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 const PopupMenuItem(
                   value: 'edit',
                   child: Text('Edit Notebook'),
+                ),
+                const PopupMenuItem(
+                  value: 'export',
+                  child: Text('Export Notebook'),
                 ),
                 PopupMenuItem(
                   value: 'archive',
@@ -511,13 +519,62 @@ class _NotebookScreenState extends State<NotebookScreen> {
         nextEntryInTime == null ||
         !TimeUtils.isSameDay(entry.displayTime, nextEntryInTime.displayTime);
 
-    // Add entry bubble first (since we build bottom-up with reverse:true)
+    // Calculate time-based spacing
+    double topSpacing = 0;
+    if (nextEntryInTime != null &&
+        TimeUtils.isSameDay(entry.displayTime, nextEntryInTime.displayTime)) {
+      final gapMinutes = TimeUtils.getTimeGapMinutes(
+        nextEntryInTime.displayTime,
+        entry.displayTime,
+      );
+      // Dynamic spacing based on time gap
+      if (gapMinutes >= TimeGaps.medium) {
+        topSpacing = 20; // 2+ hours gap
+      } else if (gapMinutes >= TimeGaps.small) {
+        topSpacing = 12; // 30min - 2hr gap
+      } else if (gapMinutes >= TimeGaps.minimal) {
+        topSpacing = 6; // 5-30min gap
+      }
+    }
+
+    // Add spacing before entry (appears after in visual order due to reverse)
+    if (topSpacing > 0) {
+      widgets.add(SizedBox(height: topSpacing));
+    }
+
+    // Add entry bubble
     widgets.add(
       EntryBubble(
         entry: entry,
         showTimestamp: true,
         notebookColor: NotebookColors.fromHex(_notebook.color),
-        onTap: () => _navigateToEdit(entry),
+        onTap: () {
+          if (_showStarredOnly) {
+            // When in starred filter, tapping navigates to original location
+            setState(() => _showStarredOnly = false);
+            // Find index in full list and scroll to it
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              final provider = context.read<EntriesProvider>();
+              final index = provider.entries.indexWhere(
+                (e) => e.id == entry.id,
+              );
+              if (index >= 0 && _scrollController.hasClients) {
+                // Estimate scroll position (rough calculation)
+                final estimatedOffset = index * 70.0;
+                _scrollController.animateTo(
+                  estimatedOffset.clamp(
+                    0,
+                    _scrollController.position.maxScrollExtent,
+                  ),
+                  duration: normalAnimation,
+                  curve: Curves.easeOut,
+                );
+              }
+            });
+          } else {
+            _navigateToEdit(entry);
+          }
+        },
         onLongPress: () => _showEntryOptions(entry),
         onImageTap: entry.hasImage
             ? () => _showFullScreenImage(entry.imagePath!)
@@ -527,6 +584,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
     // Add date header above entries (appears below in visual order due to reverse)
     if (needsDateHeader) {
+      widgets.add(const SizedBox(height: 8));
       widgets.add(DateHeader(date: TimeUtils.getDateHeader(entry.displayTime)));
     }
 
@@ -534,6 +592,24 @@ class _NotebookScreenState extends State<NotebookScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: widgets.reversed.toList(), // Reverse so header appears on top
     );
+  }
+
+  Future<void> _exportNotebook() async {
+    final exportService = ExportService();
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Exporting notebook...')));
+
+    final filePath = await exportService.exportNotebook(_notebook.id);
+
+    if (filePath != null && mounted) {
+      await exportService.shareExport(filePath);
+    } else if (mounted) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Export failed')));
+    }
   }
 
   void _showEditNotebookDialog() {

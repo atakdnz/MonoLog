@@ -45,7 +45,10 @@ class _HomeScreenState extends State<HomeScreen> {
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => const SettingsScreen()),
-    );
+    ).then((_) {
+      // Refresh notebooks in case notebook was restored from trash
+      context.read<NotebooksProvider>().loadNotebooks();
+    });
   }
 
   void _showCreateNotebookDialog() {
@@ -380,7 +383,7 @@ class _HomeScreenState extends State<HomeScreen> {
       builder: (context) => AlertDialog(
         title: const Text('Delete Notebook?'),
         content: Text(
-          'This will permanently delete "${notebook.title}" and all its entries. This action cannot be undone.',
+          '"${notebook.title}" will be moved to trash. You can restore it within 30 days.',
         ),
         actions: [
           TextButton(

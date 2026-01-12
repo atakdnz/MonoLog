@@ -123,4 +123,192 @@ class ImportService {
       return false;
     }
   }
+
+  /// Import a single notebook from ZIP as a new notebook
+  /// Used from Settings - creates a new notebook from the imported data
+  Future<bool> importSingleNotebookAsNew() async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+      );
+
+      if (result == null || result.files.isEmpty) return false;
+
+      final filePath = result.files.first.path;
+      if (filePath == null) return false;
+
+      final bytes = await File(filePath).readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      final dataFile = archive.files.firstWhere(
+        (f) => f.name == 'data.json',
+        orElse: () => throw Exception('Invalid backup: data.json not found'),
+      );
+
+      final jsonString = utf8.decode(dataFile.content as List<int>);
+      final jsonData = json.decode(jsonString) as Map<String, dynamic>;
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final imagesDir = Directory(p.join(appDir.path, 'images'));
+      if (!await imagesDir.exists()) {
+        await imagesDir.create(recursive: true);
+      }
+
+      // Extract images
+      final imageMap = <String, String>{};
+      for (final file in archive.files) {
+        if (file.name.startsWith('images/') && file.isFile) {
+          final imageFilename = p.basename(file.name);
+          final localFilename =
+              '${DateTime.now().millisecondsSinceEpoch}_$imageFilename';
+          final localPath = p.join(imagesDir.path, localFilename);
+
+          final imageFile = File(localPath);
+          await imageFile.writeAsBytes(file.content as List<int>);
+          imageMap[imageFilename] = localPath;
+        }
+      }
+
+      final notebooksJson = jsonData['notebooks'] as List;
+      if (notebooksJson.isEmpty) return false;
+
+      // Import the first notebook (single notebook export only has one)
+      final notebookData = notebooksJson.first as Map<String, dynamic>;
+      final originalNotebook = Notebook.fromJson(notebookData);
+
+      // Create a new notebook with new ID to avoid conflicts
+      final newNotebook = Notebook(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: '${originalNotebook.title} (Imported)',
+        color: originalNotebook.color,
+        isPinned: false,
+        isArchived: false,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+
+      await _db.insertNotebook(newNotebook);
+
+      // Import entries with new notebook ID
+      final entriesJson = notebookData['entries'] as List?;
+      if (entriesJson != null) {
+        for (final entryJson in entriesJson) {
+          final entryData = entryJson as Map<String, dynamic>;
+
+          String? imagePath;
+          final imageFilename = entryData['image_filename'] as String?;
+          if (imageFilename != null && imageMap.containsKey(imageFilename)) {
+            imagePath = imageMap[imageFilename];
+          }
+
+          final entry = Entry(
+            id: '${DateTime.now().millisecondsSinceEpoch}_${entryData['id']}',
+            notebookId: newNotebook.id, // Use new notebook ID
+            content: entryData['content'] as String?,
+            imagePath: imagePath,
+            displayTime: DateTime.parse(entryData['display_time'] as String),
+            createdAt: DateTime.parse(entryData['created_at'] as String),
+            isStarred: entryData['is_starred'] as bool? ?? false,
+          );
+
+          await _db.insertEntry(entry);
+        }
+      }
+
+      return true;
+    } catch (e) {
+      print('Import single notebook failed: $e');
+      return false;
+    }
+  }
+
+  /// Import entries from ZIP and merge into an existing notebook
+  /// Used from inside a notebook - merges entries into current notebook
+  Future<bool> importMergeIntoNotebook(String targetNotebookId) async {
+    try {
+      final result = await FilePicker.platform.pickFiles(
+        type: FileType.custom,
+        allowedExtensions: ['zip'],
+      );
+
+      if (result == null || result.files.isEmpty) return false;
+
+      final filePath = result.files.first.path;
+      if (filePath == null) return false;
+
+      final bytes = await File(filePath).readAsBytes();
+      final archive = ZipDecoder().decodeBytes(bytes);
+
+      final dataFile = archive.files.firstWhere(
+        (f) => f.name == 'data.json',
+        orElse: () => throw Exception('Invalid backup: data.json not found'),
+      );
+
+      final jsonString = utf8.decode(dataFile.content as List<int>);
+      final jsonData = json.decode(jsonString) as Map<String, dynamic>;
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final imagesDir = Directory(p.join(appDir.path, 'images'));
+      if (!await imagesDir.exists()) {
+        await imagesDir.create(recursive: true);
+      }
+
+      // Extract images
+      final imageMap = <String, String>{};
+      for (final file in archive.files) {
+        if (file.name.startsWith('images/') && file.isFile) {
+          final imageFilename = p.basename(file.name);
+          final localFilename =
+              '${DateTime.now().millisecondsSinceEpoch}_$imageFilename';
+          final localPath = p.join(imagesDir.path, localFilename);
+
+          final imageFile = File(localPath);
+          await imageFile.writeAsBytes(file.content as List<int>);
+          imageMap[imageFilename] = localPath;
+        }
+      }
+
+      final notebooksJson = jsonData['notebooks'] as List;
+      if (notebooksJson.isEmpty) return false;
+
+      // Merge entries from all notebooks in the ZIP into target notebook
+      int importedCount = 0;
+      for (final notebookJson in notebooksJson) {
+        final notebookData = notebookJson as Map<String, dynamic>;
+        final entriesJson = notebookData['entries'] as List?;
+
+        if (entriesJson != null) {
+          for (final entryJson in entriesJson) {
+            final entryData = entryJson as Map<String, dynamic>;
+
+            String? imagePath;
+            final imageFilename = entryData['image_filename'] as String?;
+            if (imageFilename != null && imageMap.containsKey(imageFilename)) {
+              imagePath = imageMap[imageFilename];
+            }
+
+            // Create entry with new ID to avoid conflicts
+            final entry = Entry(
+              id: '${DateTime.now().millisecondsSinceEpoch}_${importedCount}_${entryData['id']}',
+              notebookId: targetNotebookId, // Use target notebook ID
+              content: entryData['content'] as String?,
+              imagePath: imagePath,
+              displayTime: DateTime.parse(entryData['display_time'] as String),
+              createdAt: DateTime.parse(entryData['created_at'] as String),
+              isStarred: entryData['is_starred'] as bool? ?? false,
+            );
+
+            await _db.insertEntry(entry);
+            importedCount++;
+          }
+        }
+      }
+
+      return importedCount > 0;
+    } catch (e) {
+      print('Import merge failed: $e');
+      return false;
+    }
+  }
 }

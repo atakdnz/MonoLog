@@ -13,6 +13,7 @@ import '../widgets/entry_bubble.dart';
 import '../widgets/date_header.dart';
 import '../widgets/input_bar.dart';
 import '../services/export_service.dart';
+import '../services/import_service.dart';
 import 'entry_edit_screen.dart';
 
 class NotebookScreen extends StatefulWidget {
@@ -390,6 +391,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   case 'export':
                     _exportNotebook();
                     break;
+                  case 'import':
+                    _importIntoNotebook();
+                    break;
                   case 'archive':
                     await context.read<NotebooksProvider>().toggleArchive(
                       _notebook.id,
@@ -409,6 +413,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 const PopupMenuItem(
                   value: 'export',
                   child: Text('Export Notebook'),
+                ),
+                const PopupMenuItem(
+                  value: 'import',
+                  child: Text('Import and Merge'),
                 ),
                 PopupMenuItem(
                   value: 'archive',
@@ -616,6 +624,28 @@ class _NotebookScreenState extends State<NotebookScreen> {
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Export failed')));
+    }
+  }
+
+  Future<void> _importIntoNotebook() async {
+    final importService = ImportService();
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Importing entries...')));
+
+    final success = await importService.importMergeIntoNotebook(_notebook.id);
+
+    if (success && mounted) {
+      // Reload entries
+      await context.read<EntriesProvider>().loadEntries();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Entries imported successfully')),
+      );
+    } else if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Import failed or cancelled')),
+      );
     }
   }
 

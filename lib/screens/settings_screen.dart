@@ -87,9 +87,27 @@ class SettingsScreen extends StatelessWidget {
               ),
             ),
             title: const Text('Import Data'),
-            subtitle: const Text('Restore from a backup file'),
+            subtitle: const Text('Restore from a full backup'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => _importData(context),
+          ),
+
+          ListTile(
+            leading: Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.tertiaryContainer,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                Icons.note_add,
+                color: Theme.of(context).colorScheme.onTertiaryContainer,
+              ),
+            ),
+            title: const Text('Import Single Notebook'),
+            subtitle: const Text('Add notebook from exported file'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => _importSingleNotebook(context),
           ),
 
           const Divider(height: 32),
@@ -314,6 +332,46 @@ class SettingsScreen extends StatelessWidget {
       if (success) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Data imported successfully')),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Import cancelled or failed')),
+        );
+      }
+    } catch (e) {
+      Navigator.pop(context);
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
+    }
+  }
+
+  Future<void> _importSingleNotebook(BuildContext context) async {
+    final importService = ImportService();
+
+    // Show loading
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const AlertDialog(
+        content: Row(
+          children: [
+            CircularProgressIndicator(),
+            SizedBox(width: 16),
+            Text('Importing notebook...'),
+          ],
+        ),
+      ),
+    );
+
+    try {
+      final success = await importService.importSingleNotebookAsNew();
+
+      Navigator.pop(context); // Close loading dialog
+
+      if (success) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Notebook imported successfully')),
         );
       } else {
         ScaffoldMessenger.of(context).showSnackBar(

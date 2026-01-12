@@ -181,17 +181,7 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
     );
   }
 
-  Future<void> _pickDateTime() async {
-    // Pick date
-    final date = await showDatePicker(
-      context: context,
-      initialDate: _displayTime,
-      firstDate: DateTime(2020),
-      lastDate: DateTime.now().add(const Duration(days: 1)),
-    );
-    if (date == null || !mounted) return;
-
-    // Pick time
+  Future<void> _pickTimeOnly() async {
     final time = await showTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(_displayTime),
@@ -200,11 +190,32 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
 
     setState(() {
       _displayTime = DateTime(
+        _displayTime.year,
+        _displayTime.month,
+        _displayTime.day,
+        time.hour,
+        time.minute,
+      );
+      _hasChanges = true;
+    });
+  }
+
+  Future<void> _pickDateOnly() async {
+    final date = await showDatePicker(
+      context: context,
+      initialDate: _displayTime,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 1)),
+    );
+    if (date == null || !mounted) return;
+
+    setState(() {
+      _displayTime = DateTime(
         date.year,
         date.month,
         date.day,
-        time.hour,
-        time.minute,
+        _displayTime.hour,
+        _displayTime.minute,
       );
       _hasChanges = true;
     });
@@ -407,55 +418,117 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Date and Time selector
-              InkWell(
-                onTap: _pickDateTime,
-                borderRadius: BorderRadius.circular(12),
-                child: Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.surfaceContainerHighest,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Icon(
-                        Icons.access_time,
-                        color: Theme.of(context).colorScheme.primary,
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+              // Time and Date selectors (separate)
+              Row(
+                children: [
+                  // Time selector
+                  Expanded(
+                    child: InkWell(
+                      onTap: _pickTimeOnly,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
                           children: [
-                            Text(
-                              'Display Time',
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(
-                                    color: Theme.of(
-                                      context,
-                                    ).colorScheme.onSurface.withOpacity(0.6),
-                                  ),
+                            Icon(
+                              Icons.schedule,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 20,
                             ),
-                            const SizedBox(height: 4),
-                            Text(
-                              '${TimeUtils.formatDate(_displayTime)} at ${TimeUtils.getEntryTime(_displayTime)}',
-                              style: Theme.of(context).textTheme.bodyLarge,
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Time',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withAlpha(153),
+                                        ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    TimeUtils.getEntryTime(_displayTime),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         ),
                       ),
-                      Icon(
-                        Icons.chevron_right,
-                        color: Theme.of(
-                          context,
-                        ).colorScheme.onSurface.withOpacity(0.5),
-                      ),
-                    ],
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 12),
+                  // Date selector
+                  Expanded(
+                    child: InkWell(
+                      onTap: _pickDateOnly,
+                      borderRadius: BorderRadius.circular(12),
+                      child: Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Theme.of(
+                            context,
+                          ).colorScheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              color: Theme.of(context).colorScheme.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Date',
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .labelSmall
+                                        ?.copyWith(
+                                          color: Theme.of(context)
+                                              .colorScheme
+                                              .onSurface
+                                              .withAlpha(153),
+                                        ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    TimeUtils.formatDate(_displayTime),
+                                    style: Theme.of(context)
+                                        .textTheme
+                                        .titleMedium
+                                        ?.copyWith(fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 16),
 

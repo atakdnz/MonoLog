@@ -9,6 +9,7 @@ class EntryBubble extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onImageTap;
+  final Color? notebookColor;
 
   const EntryBubble({
     super.key,
@@ -17,12 +18,14 @@ class EntryBubble extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onImageTap,
+    this.notebookColor,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final baseColor = notebookColor ?? theme.colorScheme.primary;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -36,7 +39,7 @@ class EntryBubble extends StatelessWidget {
               child: Text(
                 TimeUtils.getEntryTime(entry.displayTime),
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withOpacity(0.5),
+                  color: theme.colorScheme.onSurface.withAlpha(128),
                 ),
               ),
             ),
@@ -51,19 +54,13 @@ class EntryBubble extends StatelessWidget {
               ),
               decoration: BoxDecoration(
                 color: isDark
-                    ? theme.colorScheme.surfaceContainerHighest
-                    : theme.colorScheme.surface,
+                    ? baseColor.withAlpha(30)
+                    : baseColor.withAlpha(20),
                 borderRadius: BorderRadius.circular(16),
                 border: Border.all(
-                  color: theme.colorScheme.outline.withOpacity(0.1),
+                  color: baseColor.withAlpha(isDark ? 60 : 40),
+                  width: 1,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: theme.colorScheme.shadow.withOpacity(0.05),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: Padding(
                 padding: const EdgeInsets.all(12),
@@ -123,7 +120,7 @@ class EntryBubble extends StatelessWidget {
                                     child: Icon(
                                       Icons.broken_image_outlined,
                                       color: theme.colorScheme.onSurface
-                                          .withOpacity(0.5),
+                                          .withAlpha(128),
                                     ),
                                   ),
                                 );

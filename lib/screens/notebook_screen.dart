@@ -446,7 +446,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
               },
             ),
           ),
-          InputBar(onSend: _handleSend, enabled: !_isSearching),
+          InputBar(
+            onSend: _handleSend,
+            enabled: !_isSearching,
+            notebookColor: notebookColor,
+          ),
         ],
       ),
     );
@@ -528,6 +532,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
       EntryBubble(
         entry: entry,
         showTimestamp: showTimestamp,
+        notebookColor: NotebookColors.fromHex(_notebook.color),
         onTap: () => _navigateToEdit(entry),
         onLongPress: () => _showEntryOptions(entry),
         onImageTap: entry.hasImage

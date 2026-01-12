@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:share_plus/share_plus.dart';
@@ -8,6 +9,7 @@ import '../database/database_helper.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
 import '../utils/constants.dart';
+import '../utils/time_utils.dart';
 
 class ExportService {
   final DatabaseHelper _db = DatabaseHelper();
@@ -18,7 +20,7 @@ class ExportService {
       final data = await _db.getAllDataForExport();
       return await _createExportZip(data);
     } catch (e) {
-      print('Export failed: $e');
+      debugPrint('Export failed: $e');
       return null;
     }
   }
@@ -30,9 +32,17 @@ class ExportService {
       if (data == null) return null;
       return await _createExportZip([data]);
     } catch (e) {
-      print('Export failed: $e');
+      debugPrint('Export failed: $e');
       return null;
     }
+  }
+
+  /// Sanitize string for use in filename
+  String _sanitizeFilename(String input) {
+    return input
+        .replaceAll(RegExp(r'[<>:"/\\|?*]'), '')
+        .replaceAll(RegExp(r'\s+'), '_')
+        .substring(0, input.length > 30 ? 30 : input.length);
   }
 
   Future<String?> _createExportZip(
@@ -41,13 +51,17 @@ class ExportService {
     try {
       final archive = Archive();
       final imagesToInclude =
-          <String, String>{}; // original path -> archive filename
+          <
+            String,
+            Map<String, String>
+          >{}; // original path -> {filename, archivePath}
 
       // Build notebooks JSON
       final notebooks = <Map<String, dynamic>>[];
 
       for (final notebookData in notebooksData) {
         final notebook = Notebook.fromMap(notebookData);
+        final sanitizedNotebookName = _sanitizeFilename(notebook.title);
         final entriesData = notebookData['entries'] as List;
 
         final entries = <Map<String, dynamic>>[];
@@ -55,13 +69,25 @@ class ExportService {
           final entry = Entry.fromMap(entryData as Map<String, dynamic>);
           final entryJson = entry.toJson();
 
-          // Handle image
+          // Handle image with descriptive naming
           if (entry.hasImage) {
             final imageFile = File(entry.imagePath!);
             if (await imageFile.exists()) {
+              // Create descriptive filename: NotebookName_YYYY-MM-DD_HH-MM_001.jpg
+              final dateStr = TimeUtils.formatDate(
+                entry.displayTime,
+              ).replaceAll('/', '-');
+              final timeStr = TimeUtils.getEntryTime(
+                entry.displayTime,
+              ).replaceAll(':', '-');
+              final ext = p.extension(entry.imagePath!);
               final imageFilename =
-                  'image_${imagesToInclude.length + 1}${p.extension(entry.imagePath!)}';
-              imagesToInclude[entry.imagePath!] = imageFilename;
+                  '${sanitizedNotebookName}_${dateStr}_$timeStr$ext';
+
+              imagesToInclude[entry.imagePath!] = {
+                'filename': imageFilename,
+                'notebook': sanitizedNotebookName,
+              };
               entryJson['image_filename'] = imageFilename;
             }
           }
@@ -87,13 +113,19 @@ class ExportService {
       // Add JSON to archive
       archive.addFile(ArchiveFile('data.json', jsonBytes.length, jsonBytes));
 
-      // Add images to archive
+      // Add images to archive, organized by notebook folder
       for (final entry in imagesToInclude.entries) {
         final imageFile = File(entry.key);
         if (await imageFile.exists()) {
           final imageBytes = await imageFile.readAsBytes();
+          final notebookFolder = entry.value['notebook']!;
+          final filename = entry.value['filename']!;
           archive.addFile(
-            ArchiveFile('images/${entry.value}', imageBytes.length, imageBytes),
+            ArchiveFile(
+              'images/$notebookFolder/$filename',
+              imageBytes.length,
+              imageBytes,
+            ),
           );
         }
       }
@@ -115,7 +147,7 @@ class ExportService {
 
       return zipPath;
     } catch (e) {
-      print('Error creating ZIP: $e');
+      debugPrint('Error creating ZIP: $e');
       return null;
     }
   }

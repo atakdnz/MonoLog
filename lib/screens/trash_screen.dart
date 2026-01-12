@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/entry.dart';
+import '../models/notebook.dart';
 import '../providers/trash_provider.dart';
 import '../database/database_helper.dart';
+import '../utils/constants.dart';
 import '../utils/time_utils.dart';
 
 class TrashScreen extends StatefulWidget {
@@ -32,113 +34,13 @@ class _TrashScreenState extends State<TrashScreen> {
     });
   }
 
-  void _showEntryPreview(Entry entry) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Row(
-          children: [
-            Expanded(
-              child: Text(
-                _notebookNames[entry.notebookId] ?? 'Unknown Notebook',
-              ),
-            ),
-            if (entry.isStarred)
-              Icon(Icons.star, size: 20, color: Colors.amber[600]),
-          ],
-        ),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              if (entry.hasContent) Text(entry.content!),
-              if (entry.hasImage) ...[
-                if (entry.hasContent) const SizedBox(height: 12),
-                Text(
-                  '📷 Has attached image',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.6),
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
-              const SizedBox(height: 16),
-              Text(
-                'Original date: ${TimeUtils.formatDate(entry.displayTime)}',
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withOpacity(0.5),
-                ),
-              ),
-              if (entry.deletedAt != null)
-                Text(
-                  'Deleted: ${TimeUtils.getRelativeTime(entry.deletedAt!)}',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.error.withOpacity(0.7),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Close'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.read<TrashProvider>().restoreEntry(entry.id);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(const SnackBar(content: Text('Entry restored')));
-            },
-            child: const Text('Restore'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(Entry entry) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Permanently?'),
-        content: const Text(
-          'This entry will be permanently deleted and cannot be recovered.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.read<TrashProvider>().permanentlyDeleteEntry(entry.id);
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showEmptyTrashConfirmation() {
     showDialog(
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Empty Trash?'),
         content: const Text(
-          'All entries in trash will be permanently deleted. This action cannot be undone.',
+          'All items in trash will be permanently deleted. This action cannot be undone.',
         ),
         actions: [
           TextButton(
@@ -171,7 +73,7 @@ class _TrashScreenState extends State<TrashScreen> {
         actions: [
           Consumer<TrashProvider>(
             builder: (context, provider, _) {
-              if (provider.trashEntries.isEmpty) return const SizedBox.shrink();
+              if (provider.isEmpty) return const SizedBox.shrink();
               return IconButton(
                 icon: const Icon(Icons.delete_forever),
                 onPressed: _showEmptyTrashConfirmation,
@@ -187,22 +89,63 @@ class _TrashScreenState extends State<TrashScreen> {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (provider.trashEntries.isEmpty) {
+          if (provider.isEmpty) {
             return _buildEmptyState();
           }
 
           return RefreshIndicator(
             onRefresh: provider.loadTrash,
-            child: ListView.builder(
+            child: ListView(
               padding: const EdgeInsets.symmetric(vertical: 8),
-              itemCount: provider.trashEntries.length,
-              itemBuilder: (context, index) {
-                final entry = provider.trashEntries[index];
-                return _buildTrashItem(entry);
-              },
+              children: [
+                // Deleted notebooks section
+                if (provider.trashNotebooks.isNotEmpty) ...[
+                  _buildSectionHeader(
+                    'Notebooks',
+                    provider.trashNotebooks.length,
+                  ),
+                  ...provider.trashNotebooks.map(_buildNotebookItem),
+                ],
+                // Deleted entries section
+                if (provider.trashEntries.isNotEmpty) ...[
+                  _buildSectionHeader('Entries', provider.trashEntries.length),
+                  ...provider.trashEntries.map(_buildEntryItem),
+                ],
+              ],
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title, int count) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Row(
+        children: [
+          Text(
+            title,
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            decoration: BoxDecoration(
+              color: Theme.of(context).colorScheme.primaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              count.toString(),
+              style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                color: Theme.of(context).colorScheme.onPrimaryContainer,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -215,20 +158,20 @@ class _TrashScreenState extends State<TrashScreen> {
           Icon(
             Icons.delete_outline,
             size: 80,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.3),
+            color: Theme.of(context).colorScheme.onSurface.withAlpha(77),
           ),
           const SizedBox(height: 16),
           Text(
             'Trash is empty',
             style: Theme.of(context).textTheme.titleLarge?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(153),
             ),
           ),
           const SizedBox(height: 8),
           Text(
-            'Deleted entries will appear here for 30 days',
+            'Deleted items will appear here for 30 days',
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+              color: Theme.of(context).colorScheme.onSurface.withAlpha(128),
             ),
             textAlign: TextAlign.center,
           ),
@@ -237,11 +180,9 @@ class _TrashScreenState extends State<TrashScreen> {
     );
   }
 
-  Widget _buildTrashItem(Entry entry) {
-    final notebookName = _notebookNames[entry.notebookId] ?? 'Unknown Notebook';
-
+  Widget _buildNotebookItem(Notebook notebook) {
     return Dismissible(
-      key: Key(entry.id),
+      key: Key('notebook_${notebook.id}'),
       background: Container(
         color: Theme.of(context).colorScheme.primary,
         alignment: Alignment.centerLeft,
@@ -256,14 +197,148 @@ class _TrashScreenState extends State<TrashScreen> {
       ),
       confirmDismiss: (direction) async {
         if (direction == DismissDirection.startToEnd) {
-          // Restore
+          context.read<TrashProvider>().restoreNotebook(notebook.id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Notebook "${notebook.title}" restored')),
+          );
+          return false;
+        } else {
+          final result = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Delete Permanently?'),
+              content: const Text(
+                'This notebook and all its entries will be permanently deleted.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('Cancel'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Theme.of(context).colorScheme.error,
+                  ),
+                  child: const Text('Delete'),
+                ),
+              ],
+            ),
+          );
+          if (result == true) {
+            context.read<TrashProvider>().permanentlyDeleteNotebook(
+              notebook.id,
+            );
+          }
+          return false;
+        }
+      },
+      child: ListTile(
+        leading: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: NotebookColors.fromHex(notebook.color),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: const Icon(Icons.book, color: Colors.white, size: 20),
+        ),
+        title: Text(
+          notebook.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(
+          'Deleted ${TimeUtils.getRelativeTime(notebook.deletedAt ?? notebook.updatedAt)}',
+          style: Theme.of(context).textTheme.labelSmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurface.withAlpha(128),
+          ),
+        ),
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              icon: const Icon(Icons.restore),
+              onPressed: () {
+                context.read<TrashProvider>().restoreNotebook(notebook.id);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text('Notebook "${notebook.title}" restored'),
+                  ),
+                );
+              },
+              tooltip: 'Restore',
+            ),
+            IconButton(
+              icon: Icon(
+                Icons.delete_forever,
+                color: Theme.of(context).colorScheme.error,
+              ),
+              onPressed: () => _showNotebookDeleteConfirmation(notebook),
+              tooltip: 'Delete permanently',
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showNotebookDeleteConfirmation(Notebook notebook) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Permanently?'),
+        content: Text(
+          'The notebook "${notebook.title}" and all its entries will be permanently deleted.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.read<TrashProvider>().permanentlyDeleteNotebook(
+                notebook.id,
+              );
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEntryItem(Entry entry) {
+    final notebookName = _notebookNames[entry.notebookId] ?? 'Unknown Notebook';
+
+    return Dismissible(
+      key: Key('entry_${entry.id}'),
+      background: Container(
+        color: Theme.of(context).colorScheme.primary,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.only(left: 16),
+        child: const Icon(Icons.restore, color: Colors.white),
+      ),
+      secondaryBackground: Container(
+        color: Theme.of(context).colorScheme.error,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 16),
+        child: const Icon(Icons.delete_forever, color: Colors.white),
+      ),
+      confirmDismiss: (direction) async {
+        if (direction == DismissDirection.startToEnd) {
           context.read<TrashProvider>().restoreEntry(entry.id);
           ScaffoldMessenger.of(
             context,
           ).showSnackBar(const SnackBar(content: Text('Entry restored')));
           return false;
         } else {
-          // Delete permanently
           final result = await showDialog<bool>(
             context: context,
             builder: (context) => AlertDialog(
@@ -291,7 +366,6 @@ class _TrashScreenState extends State<TrashScreen> {
         }
       },
       child: ListTile(
-        onTap: () => _showEntryPreview(entry),
         leading: Container(
           width: 40,
           height: 40,
@@ -301,7 +375,7 @@ class _TrashScreenState extends State<TrashScreen> {
           ),
           child: Icon(
             entry.hasImage ? Icons.image : Icons.note,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+            color: Theme.of(context).colorScheme.onSurface.withAlpha(128),
           ),
         ),
         title: Text(
@@ -316,7 +390,7 @@ class _TrashScreenState extends State<TrashScreen> {
             Text(
               '• Deleted ${TimeUtils.getRelativeTime(entry.deletedAt ?? entry.updatedAt)}',
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                color: Theme.of(context).colorScheme.onSurface.withAlpha(128),
               ),
             ),
           ],
@@ -339,11 +413,39 @@ class _TrashScreenState extends State<TrashScreen> {
                 Icons.delete_forever,
                 color: Theme.of(context).colorScheme.error,
               ),
-              onPressed: () => _showDeleteConfirmation(entry),
+              onPressed: () => _showEntryDeleteConfirmation(entry),
               tooltip: 'Delete permanently',
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  void _showEntryDeleteConfirmation(Entry entry) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Permanently?'),
+        content: const Text(
+          'This entry will be permanently deleted and cannot be recovered.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              context.read<TrashProvider>().permanentlyDeleteEntry(entry.id);
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
       ),
     );
   }

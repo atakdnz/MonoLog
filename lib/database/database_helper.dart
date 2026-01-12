@@ -23,7 +23,12 @@ class DatabaseHelper {
     final dbPath = await getDatabasesPath();
     final path = join(dbPath, 'monolog.db');
 
-    return await openDatabase(path, version: 1, onCreate: _onCreate);
+    return await openDatabase(
+      path,
+      version: 2,
+      onCreate: _onCreate,
+      onUpgrade: _onUpgrade,
+    );
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -34,6 +39,8 @@ class DatabaseHelper {
         color TEXT NOT NULL,
         is_pinned INTEGER DEFAULT 0,
         is_archived INTEGER DEFAULT 0,
+        is_deleted INTEGER DEFAULT 0,
+        deleted_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )
@@ -65,6 +72,22 @@ class DatabaseHelper {
     await db.execute(
       'CREATE INDEX idx_entries_is_deleted ON entries(is_deleted)',
     );
+    await db.execute(
+      'CREATE INDEX idx_notebooks_is_deleted ON notebooks(is_deleted)',
+    );
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      // Add is_deleted and deleted_at columns to notebooks table
+      await db.execute(
+        'ALTER TABLE notebooks ADD COLUMN is_deleted INTEGER DEFAULT 0',
+      );
+      await db.execute('ALTER TABLE notebooks ADD COLUMN deleted_at TEXT');
+      await db.execute(
+        'CREATE INDEX idx_notebooks_is_deleted ON notebooks(is_deleted)',
+      );
+    }
   }
 
   // =========== NOTEBOOK OPERATIONS ===========
@@ -86,8 +109,35 @@ class DatabaseHelper {
     );
   }
 
+  /// Soft delete a notebook (move to trash)
+  Future<void> softDeleteNotebook(String id) async {
+    final db = await database;
+    final now = DateTime.now().toIso8601String();
+    await db.rawUpdate(
+      '''
+      UPDATE notebooks 
+      SET is_deleted = 1, deleted_at = ?, updated_at = ?, is_pinned = 0
+      WHERE id = ?
+    ''',
+      [now, now, id],
+    );
+  }
+
+  /// Restore a notebook from trash
+  Future<void> restoreNotebook(String id) async {
+    final db = await database;
+    await db.rawUpdate(
+      '''
+      UPDATE notebooks 
+      SET is_deleted = 0, deleted_at = NULL, updated_at = ?
+      WHERE id = ?
+    ''',
+      [DateTime.now().toIso8601String(), id],
+    );
+  }
+
   /// Delete a notebook and all its entries permanently
-  Future<void> deleteNotebook(String id) async {
+  Future<void> permanentlyDeleteNotebook(String id) async {
     final db = await database;
     await db.transaction((txn) async {
       // Delete all entries in the notebook first
@@ -105,12 +155,14 @@ class DatabaseHelper {
     return Notebook.fromMap(maps.first);
   }
 
-  /// Get all notebooks (excluding archived)
+  /// Get all notebooks (excluding archived and deleted)
   Future<List<Notebook>> getNotebooks({bool includeArchived = false}) async {
     final db = await database;
     final maps = await db.query(
       'notebooks',
-      where: includeArchived ? null : 'is_archived = 0',
+      where: includeArchived
+          ? 'is_deleted = 0'
+          : 'is_archived = 0 AND is_deleted = 0',
       orderBy: 'is_pinned DESC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
@@ -121,18 +173,18 @@ class DatabaseHelper {
     final db = await database;
     final maps = await db.query(
       'notebooks',
-      where: 'is_pinned = 1 AND is_archived = 0',
+      where: 'is_pinned = 1 AND is_archived = 0 AND is_deleted = 0',
       orderBy: 'updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
 
-  /// Get regular (non-pinned, non-archived) notebooks
+  /// Get regular (non-pinned, non-archived, non-deleted) notebooks
   Future<List<Notebook>> getRegularNotebooks() async {
     final db = await database;
     final maps = await db.query(
       'notebooks',
-      where: 'is_pinned = 0 AND is_archived = 0',
+      where: 'is_pinned = 0 AND is_archived = 0 AND is_deleted = 0',
       orderBy: 'updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
@@ -143,8 +195,19 @@ class DatabaseHelper {
     final db = await database;
     final maps = await db.query(
       'notebooks',
-      where: 'is_archived = 1',
+      where: 'is_archived = 1 AND is_deleted = 0',
       orderBy: 'updated_at DESC',
+    );
+    return maps.map((map) => Notebook.fromMap(map)).toList();
+  }
+
+  /// Get deleted notebooks (trash)
+  Future<List<Notebook>> getDeletedNotebooks() async {
+    final db = await database;
+    final maps = await db.query(
+      'notebooks',
+      where: 'is_deleted = 1',
+      orderBy: 'deleted_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
@@ -318,23 +381,67 @@ class DatabaseHelper {
     return maps.map((map) => Entry.fromMap(map)).toList();
   }
 
-  /// Empty trash (delete all trashed entries permanently)
+  /// Empty trash (delete all trashed entries and notebooks permanently)
   Future<void> emptyTrash() async {
     final db = await database;
-    await db.delete('entries', where: 'is_deleted = 1');
+    await db.transaction((txn) async {
+      // Get all deleted notebooks
+      final deletedNotebooks = await txn.query(
+        'notebooks',
+        columns: ['id'],
+        where: 'is_deleted = 1',
+      );
+      // Delete entries for deleted notebooks
+      for (final notebook in deletedNotebooks) {
+        await txn.delete(
+          'entries',
+          where: 'notebook_id = ?',
+          whereArgs: [notebook['id']],
+        );
+      }
+      // Delete notebooks
+      await txn.delete('notebooks', where: 'is_deleted = 1');
+      // Delete orphan entries
+      await txn.delete('entries', where: 'is_deleted = 1');
+    });
   }
 
-  /// Auto-cleanup: delete entries older than 30 days from trash
+  /// Auto-cleanup: delete entries and notebooks older than 30 days from trash
   Future<void> cleanupOldTrash() async {
     final db = await database;
     final cutoffDate = DateTime.now()
         .subtract(const Duration(days: trashRetentionDays))
         .toIso8601String();
-    await db.delete(
-      'entries',
-      where: 'is_deleted = 1 AND deleted_at < ?',
-      whereArgs: [cutoffDate],
-    );
+
+    await db.transaction((txn) async {
+      // Get old deleted notebooks
+      final oldNotebooks = await txn.query(
+        'notebooks',
+        columns: ['id'],
+        where: 'is_deleted = 1 AND deleted_at < ?',
+        whereArgs: [cutoffDate],
+      );
+      // Delete entries for old notebooks
+      for (final notebook in oldNotebooks) {
+        await txn.delete(
+          'entries',
+          where: 'notebook_id = ?',
+          whereArgs: [notebook['id']],
+        );
+      }
+      // Delete old notebooks
+      await txn.delete(
+        'notebooks',
+        where: 'is_deleted = 1 AND deleted_at < ?',
+        whereArgs: [cutoffDate],
+      );
+      // Delete old entries
+      await txn.delete(
+        'entries',
+        where: 'is_deleted = 1 AND deleted_at < ?',
+        whereArgs: [cutoffDate],
+      );
+    });
   }
 
   // =========== SEARCH OPERATIONS ===========
@@ -348,7 +455,7 @@ class DatabaseHelper {
       SELECT e.*, n.title as notebook_title, n.color as notebook_color
       FROM entries e
       JOIN notebooks n ON e.notebook_id = n.id
-      WHERE e.is_deleted = 0 AND e.content LIKE ?
+      WHERE e.is_deleted = 0 AND n.is_deleted = 0 AND e.content LIKE ?
       ORDER BY e.display_time DESC
       LIMIT 100
     ''',
@@ -377,7 +484,7 @@ class DatabaseHelper {
     final db = await database;
     final notebooks = await db.query(
       'notebooks',
-      where: 'is_archived = 0',
+      where: 'is_archived = 0 AND is_deleted = 0',
       orderBy: 'created_at ASC',
     );
 

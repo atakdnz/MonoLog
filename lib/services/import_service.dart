@@ -79,7 +79,7 @@ class ImportService {
           continue;
         } else if (exists && !merge) {
           // Delete existing notebook in replace mode
-          await _db.deleteNotebook(notebook.id);
+          await _db.permanentlyDeleteNotebook(notebook.id);
         }
 
         // Insert notebook

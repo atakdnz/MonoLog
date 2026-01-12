@@ -531,7 +531,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     widgets.add(
       EntryBubble(
         entry: entry,
-        showTimestamp: showTimestamp,
+        showTimestamp: true, // Always show time per user preference
         notebookColor: NotebookColors.fromHex(_notebook.color),
         onTap: () => _navigateToEdit(entry),
         onLongPress: () => _showEntryOptions(entry),

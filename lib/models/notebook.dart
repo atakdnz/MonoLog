@@ -6,6 +6,8 @@ class Notebook {
   final String color;
   final bool isPinned;
   final bool isArchived;
+  final bool isDeleted;
+  final DateTime? deletedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -15,6 +17,8 @@ class Notebook {
     required this.color,
     this.isPinned = false,
     this.isArchived = false,
+    this.isDeleted = false,
+    this.deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : id = id ?? const Uuid().v4(),
@@ -28,6 +32,9 @@ class Notebook {
     String? color,
     bool? isPinned,
     bool? isArchived,
+    bool? isDeleted,
+    DateTime? deletedAt,
+    bool clearDeletedAt = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -37,6 +44,8 @@ class Notebook {
       color: color ?? this.color,
       isPinned: isPinned ?? this.isPinned,
       isArchived: isArchived ?? this.isArchived,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -48,8 +57,12 @@ class Notebook {
       id: map['id'] as String,
       title: map['title'] as String,
       color: map['color'] as String,
-      isPinned: (map['is_pinned'] as int) == 1,
-      isArchived: (map['is_archived'] as int) == 1,
+      isPinned: (map['is_pinned'] as int?) == 1,
+      isArchived: (map['is_archived'] as int?) == 1,
+      isDeleted: (map['is_deleted'] as int?) == 1,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.parse(map['deleted_at'] as String)
+          : null,
       createdAt: DateTime.parse(map['created_at'] as String),
       updatedAt: DateTime.parse(map['updated_at'] as String),
     );
@@ -63,6 +76,8 @@ class Notebook {
       'color': color,
       'is_pinned': isPinned ? 1 : 0,
       'is_archived': isArchived ? 1 : 0,
+      'is_deleted': isDeleted ? 1 : 0,
+      'deleted_at': deletedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
     };
@@ -76,6 +91,10 @@ class Notebook {
       color: json['color'] as String,
       isPinned: json['is_pinned'] as bool? ?? false,
       isArchived: json['is_archived'] as bool? ?? false,
+      isDeleted: json['is_deleted'] as bool? ?? false,
+      deletedAt: json['deleted_at'] != null
+          ? DateTime.parse(json['deleted_at'] as String)
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
           ? DateTime.parse(json['updated_at'] as String)
@@ -91,13 +110,15 @@ class Notebook {
       'color': color,
       'is_pinned': isPinned,
       'is_archived': isArchived,
+      'is_deleted': isDeleted,
+      'deleted_at': deletedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };
   }
 
   @override
   String toString() {
-    return 'Notebook{id: $id, title: $title, color: $color, isPinned: $isPinned, isArchived: $isArchived}';
+    return 'Notebook{id: $id, title: $title, color: $color, isPinned: $isPinned, isArchived: $isArchived, isDeleted: $isDeleted}';
   }
 
   @override

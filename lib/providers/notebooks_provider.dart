@@ -58,9 +58,9 @@ class NotebooksProvider with ChangeNotifier {
     await loadNotebooks();
   }
 
-  /// Delete a notebook
+  /// Delete a notebook (move to trash)
   Future<void> deleteNotebook(String id) async {
-    await _db.deleteNotebook(id);
+    await _db.softDeleteNotebook(id);
     await loadNotebooks();
   }
 

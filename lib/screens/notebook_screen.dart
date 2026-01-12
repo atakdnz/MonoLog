@@ -27,6 +27,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
   final _scrollController = ScrollController();
   late Notebook _notebook;
   bool _isSearching = false;
+  bool _showStarredOnly = false;
   final _searchController = TextEditingController();
   List<Entry> _searchResults = [];
 
@@ -367,6 +368,15 @@ class _NotebookScreenState extends State<NotebookScreen> {
           ),
           if (!_isSearching) ...[
             IconButton(
+              icon: Icon(
+                _showStarredOnly ? Icons.star : Icons.star_border,
+                color: _showStarredOnly ? Colors.amber[600] : null,
+              ),
+              onPressed: () =>
+                  setState(() => _showStarredOnly = !_showStarredOnly),
+              tooltip: _showStarredOnly ? 'Show all' : 'Show starred only',
+            ),
+            IconButton(
               icon: const Icon(Icons.calendar_today),
               onPressed: _showJumpToDatePicker,
             ),
@@ -419,25 +429,30 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   return const Center(child: CircularProgressIndicator());
                 }
 
-                final entries =
-                    _isSearching && _searchController.text.isNotEmpty
+                var entries = _isSearching && _searchController.text.isNotEmpty
                     ? _searchResults
                     : provider.entries;
+
+                // Apply starred filter
+                if (_showStarredOnly) {
+                  entries = entries.where((e) => e.isStarred).toList();
+                }
 
                 if (entries.isEmpty) {
                   return _buildEmptyState();
                 }
 
+                // Entries from provider are DESC (newest first)
+                // With reverse:true ListView, we iterate normally so newest shows at bottom
                 return ListView.builder(
                   controller: _scrollController,
                   reverse: true,
-                  padding: const EdgeInsets.only(top: 16, bottom: 8),
+                  padding: const EdgeInsets.only(top: 8, bottom: 8),
                   itemCount: entries.length,
                   itemBuilder: (context, index) {
-                    // Entries are in DESC order, so we process them in reverse for display
-                    final entry = entries[entries.length - 1 - index];
-                    final previousEntry = index > 0
-                        ? entries[entries.length - index]
+                    final entry = entries[index];
+                    final previousEntry = index < entries.length - 1
+                        ? entries[index + 1]
                         : null;
 
                     return _buildEntryItem(entry, previousEntry);
@@ -487,51 +502,20 @@ class _NotebookScreenState extends State<NotebookScreen> {
     );
   }
 
-  Widget _buildEntryItem(Entry entry, Entry? previousEntry) {
+  Widget _buildEntryItem(Entry entry, Entry? nextEntryInTime) {
     final widgets = <Widget>[];
 
-    // Check if we need a date header (different day from previous entry)
+    // Date header: show when this entry is the first of a new day
+    // nextEntryInTime is actually the next older entry (displayTime-wise)
     final needsDateHeader =
-        previousEntry == null ||
-        !TimeUtils.isSameDay(entry.displayTime, previousEntry.displayTime);
+        nextEntryInTime == null ||
+        !TimeUtils.isSameDay(entry.displayTime, nextEntryInTime.displayTime);
 
-    if (needsDateHeader) {
-      widgets.add(DateHeader(date: TimeUtils.getDateHeader(entry.displayTime)));
-    }
-
-    // Check if we need to show timestamp
-    bool showTimestamp = true;
-    if (previousEntry != null &&
-        TimeUtils.isSameDay(entry.displayTime, previousEntry.displayTime)) {
-      final gapMinutes = TimeUtils.getTimeGapMinutes(
-        previousEntry.displayTime,
-        entry.displayTime,
-      );
-      showTimestamp = gapMinutes >= TimeGaps.minimal;
-    }
-
-    // Add spacing based on time gap
-    if (previousEntry != null &&
-        TimeUtils.isSameDay(entry.displayTime, previousEntry.displayTime)) {
-      final gapMinutes = TimeUtils.getTimeGapMinutes(
-        previousEntry.displayTime,
-        entry.displayTime,
-      );
-      double spacing = 4;
-      if (gapMinutes >= TimeGaps.medium) {
-        spacing = 24;
-      } else if (gapMinutes >= TimeGaps.small) {
-        spacing = 12;
-      } else if (gapMinutes >= TimeGaps.minimal) {
-        spacing = 8;
-      }
-      widgets.add(SizedBox(height: spacing));
-    }
-
+    // Add entry bubble first (since we build bottom-up with reverse:true)
     widgets.add(
       EntryBubble(
         entry: entry,
-        showTimestamp: true, // Always show time per user preference
+        showTimestamp: true,
         notebookColor: NotebookColors.fromHex(_notebook.color),
         onTap: () => _navigateToEdit(entry),
         onLongPress: () => _showEntryOptions(entry),
@@ -541,9 +525,14 @@ class _NotebookScreenState extends State<NotebookScreen> {
       ),
     );
 
+    // Add date header above entries (appears below in visual order due to reverse)
+    if (needsDateHeader) {
+      widgets.add(DateHeader(date: TimeUtils.getDateHeader(entry.displayTime)));
+    }
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets,
+      children: widgets.reversed.toList(), // Reverse so header appears on top
     );
   }
 

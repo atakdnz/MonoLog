@@ -28,109 +28,133 @@ class EntryBubble extends StatelessWidget {
     final baseColor = notebookColor ?? theme.colorScheme.primary;
 
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-          // Timestamp
+          // Timestamp on the left (compact)
           if (showTimestamp)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 4, left: 4),
+            SizedBox(
+              width: 44,
               child: Text(
                 TimeUtils.getEntryTime(entry.displayTime),
                 style: theme.textTheme.labelSmall?.copyWith(
-                  color: theme.colorScheme.onSurface.withAlpha(128),
+                  color: theme.colorScheme.onSurface.withAlpha(100),
+                  fontSize: 10,
                 ),
+                textAlign: TextAlign.right,
               ),
             ),
+          if (showTimestamp) const SizedBox(width: 8),
 
           // Entry bubble
-          GestureDetector(
-            onTap: onTap,
-            onLongPress: onLongPress,
-            child: Container(
-              constraints: BoxConstraints(
-                maxWidth: MediaQuery.of(context).size.width * 0.85,
-              ),
-              decoration: BoxDecoration(
-                color: isDark
-                    ? baseColor.withAlpha(30)
-                    : baseColor.withAlpha(20),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: baseColor.withAlpha(isDark ? 60 : 40),
-                  width: 1,
+          Expanded(
+            child: GestureDetector(
+              onTap: onTap,
+              onLongPress: onLongPress,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: isDark
+                      ? baseColor.withAlpha(25)
+                      : baseColor.withAlpha(15),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: baseColor.withAlpha(isDark ? 50 : 30),
+                    width: 0.5,
+                  ),
                 ),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Star indicator
-                    if (entry.isStarred)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Content row with star
+                      if (entry.hasContent)
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Icon(
-                              Icons.star,
-                              size: 14,
-                              color: Colors.amber[600],
-                            ),
-                            const SizedBox(width: 4),
-                            Text(
-                              'Starred',
-                              style: theme.textTheme.labelSmall?.copyWith(
-                                color: Colors.amber[600],
+                            Expanded(
+                              child: Text(
+                                entry.content!,
+                                style: theme.textTheme.bodyMedium?.copyWith(
+                                  height: 1.3,
+                                ),
                               ),
                             ),
+                            if (entry.isStarred) ...[
+                              const SizedBox(width: 4),
+                              Icon(
+                                Icons.star,
+                                size: 14,
+                                color: Colors.amber[600],
+                              ),
+                            ],
                           ],
                         ),
-                      ),
 
-                    // Text content
-                    if (entry.hasContent)
-                      Text(
-                        entry.content!,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          height: 1.4,
-                        ),
-                      ),
-
-                    // Image
-                    if (entry.hasImage) ...[
-                      if (entry.hasContent) const SizedBox(height: 8),
-                      GestureDetector(
-                        onTap: onImageTap,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(12),
-                          child: ConstrainedBox(
-                            constraints: const BoxConstraints(maxHeight: 200),
-                            child: Image.file(
-                              File(entry.imagePath!),
-                              fit: BoxFit.cover,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Container(
-                                  height: 100,
-                                  color:
-                                      theme.colorScheme.surfaceContainerHighest,
-                                  child: Center(
+                      // Image
+                      if (entry.hasImage) ...[
+                        if (entry.hasContent) const SizedBox(height: 6),
+                        GestureDetector(
+                          onTap: onImageTap,
+                          child: Stack(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(10),
+                                child: ConstrainedBox(
+                                  constraints: const BoxConstraints(
+                                    maxHeight: 180,
+                                  ),
+                                  child: Image.file(
+                                    File(entry.imagePath!),
+                                    fit: BoxFit.cover,
+                                    width: double.infinity,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      return Container(
+                                        height: 80,
+                                        color: theme
+                                            .colorScheme
+                                            .surfaceContainerHighest,
+                                        child: Center(
+                                          child: Icon(
+                                            Icons.broken_image_outlined,
+                                            color: theme.colorScheme.onSurface
+                                                .withAlpha(128),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ),
+                              // Star overlay for image-only entries
+                              if (!entry.hasContent && entry.isStarred)
+                                Positioned(
+                                  top: 4,
+                                  right: 4,
+                                  child: Container(
+                                    padding: const EdgeInsets.all(4),
+                                    decoration: BoxDecoration(
+                                      color: Colors.black.withAlpha(100),
+                                      shape: BoxShape.circle,
+                                    ),
                                     child: Icon(
-                                      Icons.broken_image_outlined,
-                                      color: theme.colorScheme.onSurface
-                                          .withAlpha(128),
+                                      Icons.star,
+                                      size: 12,
+                                      color: Colors.amber[400],
                                     ),
                                   ),
-                                );
-                              },
-                            ),
+                                ),
+                            ],
                           ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),

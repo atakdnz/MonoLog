@@ -451,7 +451,8 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 }
 
                 // Entries from provider are DESC (newest first)
-                // With reverse:true ListView, we iterate normally so newest shows at bottom
+                // With reverse:true ListView, index 0 appears at bottom
+                // So for time-based spacing, we compare each entry with the one BELOW it
                 return ListView.builder(
                   controller: _scrollController,
                   reverse: true,
@@ -459,11 +460,14 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   itemCount: entries.length,
                   itemBuilder: (context, index) {
                     final entry = entries[index];
-                    final previousEntry = index < entries.length - 1
+                    // The entry that appears ABOVE this one visually (older in time)
+                    final olderEntry = index < entries.length - 1
                         ? entries[index + 1]
                         : null;
+                    // The entry that appears BELOW this one visually (newer in time)
+                    final newerEntry = index > 0 ? entries[index - 1] : null;
 
-                    return _buildEntryItem(entry, previousEntry);
+                    return _buildEntryItem(entry, olderEntry, newerEntry);
                   },
                 );
               },
@@ -510,39 +514,47 @@ class _NotebookScreenState extends State<NotebookScreen> {
     );
   }
 
-  Widget _buildEntryItem(Entry entry, Entry? nextEntryInTime) {
+  Widget _buildEntryItem(Entry entry, Entry? olderEntry, Entry? newerEntry) {
     final widgets = <Widget>[];
 
-    // Date header: show when this entry is the first of a new day
-    // nextEntryInTime is actually the next older entry (displayTime-wise)
+    // Date header: show when this is the first entry of a new day
+    // (i.e., the older entry is on a different day or doesn't exist)
     final needsDateHeader =
-        nextEntryInTime == null ||
-        !TimeUtils.isSameDay(entry.displayTime, nextEntryInTime.displayTime);
+        olderEntry == null ||
+        !TimeUtils.isSameDay(entry.displayTime, olderEntry.displayTime);
 
-    // Calculate time-based spacing
-    double topSpacing = 0;
-    if (nextEntryInTime != null &&
-        TimeUtils.isSameDay(entry.displayTime, nextEntryInTime.displayTime)) {
+    // Calculate spacing ABOVE this entry (gap from older entry)
+    // This creates visual separation between time-distant entries
+    double aboveSpacing = 0;
+    if (olderEntry != null &&
+        TimeUtils.isSameDay(entry.displayTime, olderEntry.displayTime)) {
       final gapMinutes = TimeUtils.getTimeGapMinutes(
-        nextEntryInTime.displayTime,
+        olderEntry.displayTime,
         entry.displayTime,
       );
-      // Dynamic spacing based on time gap
+      // Dynamic spacing based on time gap - bigger values for more noticeable effect
       if (gapMinutes >= TimeGaps.medium) {
-        topSpacing = 20; // 2+ hours gap
+        aboveSpacing = 32; // 2+ hours gap - very noticeable
       } else if (gapMinutes >= TimeGaps.small) {
-        topSpacing = 12; // 30min - 2hr gap
+        aboveSpacing = 18; // 30min - 2hr gap
       } else if (gapMinutes >= TimeGaps.minimal) {
-        topSpacing = 6; // 5-30min gap
+        aboveSpacing = 8; // 5-30min gap
       }
     }
 
-    // Add spacing before entry (appears after in visual order due to reverse)
-    if (topSpacing > 0) {
-      widgets.add(SizedBox(height: topSpacing));
+    // Build widgets in visual order (top to bottom)
+    // Date header first (if needed)
+    if (needsDateHeader) {
+      widgets.add(DateHeader(date: TimeUtils.getDateHeader(entry.displayTime)));
+      widgets.add(const SizedBox(height: 12));
     }
 
-    // Add entry bubble
+    // Time-based spacing above entry
+    if (aboveSpacing > 0 && !needsDateHeader) {
+      widgets.add(SizedBox(height: aboveSpacing));
+    }
+
+    // Entry bubble
     widgets.add(
       EntryBubble(
         entry: entry,
@@ -582,15 +594,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
       ),
     );
 
-    // Add date header above entries (appears below in visual order due to reverse)
-    if (needsDateHeader) {
-      widgets.add(const SizedBox(height: 8));
-      widgets.add(DateHeader(date: TimeUtils.getDateHeader(entry.displayTime)));
-    }
-
+    // With reverse:true ListView, widgets are displayed in reverse
+    // So we reverse our list to get correct visual order
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets.reversed.toList(), // Reverse so header appears on top
+      children: widgets.reversed.toList(),
     );
   }
 

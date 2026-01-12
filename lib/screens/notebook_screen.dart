@@ -594,11 +594,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
       ),
     );
 
-    // With reverse:true ListView, widgets are displayed in reverse
-    // So we reverse our list to get correct visual order
+    // Return column with widgets in visual order (top to bottom)
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: widgets.reversed.toList(),
+      children: widgets,
     );
   }
 

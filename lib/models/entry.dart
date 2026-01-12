@@ -1,0 +1,147 @@
+import 'package:uuid/uuid.dart';
+
+class Entry {
+  final String id;
+  final String notebookId;
+  final String? content;
+  final String? imagePath;
+  final DateTime displayTime;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+  final bool isStarred;
+  final bool isDeleted;
+  final DateTime? deletedAt;
+
+  Entry({
+    String? id,
+    required this.notebookId,
+    this.content,
+    this.imagePath,
+    DateTime? displayTime,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    this.isStarred = false,
+    this.isDeleted = false,
+    this.deletedAt,
+  }) : id = id ?? const Uuid().v4(),
+       displayTime = displayTime ?? DateTime.now(),
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
+
+  /// Create a copy with updated fields
+  Entry copyWith({
+    String? id,
+    String? notebookId,
+    String? content,
+    String? imagePath,
+    DateTime? displayTime,
+    DateTime? createdAt,
+    DateTime? updatedAt,
+    bool? isStarred,
+    bool? isDeleted,
+    DateTime? deletedAt,
+    bool clearContent = false,
+    bool clearImagePath = false,
+    bool clearDeletedAt = false,
+  }) {
+    return Entry(
+      id: id ?? this.id,
+      notebookId: notebookId ?? this.notebookId,
+      content: clearContent ? null : (content ?? this.content),
+      imagePath: clearImagePath ? null : (imagePath ?? this.imagePath),
+      displayTime: displayTime ?? this.displayTime,
+      createdAt: createdAt ?? this.createdAt,
+      updatedAt: updatedAt ?? this.updatedAt,
+      isStarred: isStarred ?? this.isStarred,
+      isDeleted: isDeleted ?? this.isDeleted,
+      deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
+    );
+  }
+
+  /// Factory constructor from database map
+  factory Entry.fromMap(Map<String, dynamic> map) {
+    return Entry(
+      id: map['id'] as String,
+      notebookId: map['notebook_id'] as String,
+      content: map['content'] as String?,
+      imagePath: map['image_path'] as String?,
+      displayTime: DateTime.parse(map['display_time'] as String),
+      createdAt: DateTime.parse(map['created_at'] as String),
+      updatedAt: DateTime.parse(map['updated_at'] as String),
+      isStarred: (map['is_starred'] as int) == 1,
+      isDeleted: (map['is_deleted'] as int) == 1,
+      deletedAt: map['deleted_at'] != null
+          ? DateTime.parse(map['deleted_at'] as String)
+          : null,
+    );
+  }
+
+  /// Convert to database map
+  Map<String, dynamic> toMap() {
+    return {
+      'id': id,
+      'notebook_id': notebookId,
+      'content': content,
+      'image_path': imagePath,
+      'display_time': displayTime.toIso8601String(),
+      'created_at': createdAt.toIso8601String(),
+      'updated_at': updatedAt.toIso8601String(),
+      'is_starred': isStarred ? 1 : 0,
+      'is_deleted': isDeleted ? 1 : 0,
+      'deleted_at': deletedAt?.toIso8601String(),
+    };
+  }
+
+  /// Factory constructor from JSON (for import/export)
+  factory Entry.fromJson(Map<String, dynamic> json, String notebookId) {
+    return Entry(
+      id: json['id'] as String,
+      notebookId: notebookId,
+      content: json['content'] as String?,
+      imagePath: json['image_filename'] as String?,
+      displayTime: DateTime.parse(json['display_time'] as String),
+      createdAt: DateTime.parse(json['created_at'] as String),
+      updatedAt: json['updated_at'] != null
+          ? DateTime.parse(json['updated_at'] as String)
+          : DateTime.parse(json['created_at'] as String),
+      isStarred: json['is_starred'] as bool? ?? false,
+      isDeleted: false,
+      deletedAt: null,
+    );
+  }
+
+  /// Convert to JSON (for import/export)
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'content': content,
+      'image_filename': imagePath != null ? imagePath!.split('/').last : null,
+      'display_time': displayTime.toIso8601String(),
+      'is_starred': isStarred,
+      'created_at': createdAt.toIso8601String(),
+    };
+  }
+
+  /// Check if the entry has any content
+  bool get hasContent => content != null && content!.isNotEmpty;
+
+  /// Check if the entry has an image
+  bool get hasImage => imagePath != null && imagePath!.isNotEmpty;
+
+  /// Check if the entry is empty (no content and no image)
+  bool get isEmpty => !hasContent && !hasImage;
+
+  @override
+  String toString() {
+    return 'Entry{id: $id, notebookId: $notebookId, content: ${content?.substring(0, content!.length > 20 ? 20 : content!.length)}..., isStarred: $isStarred, isDeleted: $isDeleted}';
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is Entry && other.id == id;
+  }
+
+  @override
+  int get hashCode => id.hashCode;
+}

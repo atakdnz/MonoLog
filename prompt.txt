@@ -1,0 +1,415 @@
+
+---
+
+## Project: Flutter Journal-Style Note-Taking App (Android)
+
+### Overview
+
+Build a Flutter note-taking application for Android that reimagines how notes are captured. Instead of traditional long-form notes, users input quick entries like sending messages in a chat app. The app is designed for **daily journaling/logging** where capturing and reading back timestamped moments is the primary use case.
+
+**Think of it as:** Google Keep's organization + Messaging app's input style + Journal's time-awareness
+
+---
+
+### Technical Stack
+
+| Component | Technology |
+|-----------|------------|
+| Framework | Flutter |
+| Platform | Android |
+| Database | SQLite (sqflite package) |
+| Image Storage | Local app directory |
+| Offline | Fully offline-capable |
+
+---
+
+### Data Structure
+
+```
+Notebook
+├── id (primary key)
+├── title
+├── color (hex code)
+├── is_pinned (boolean)
+├── is_archived (boolean)
+├── created_at
+├── updated_at
+
+Entry
+├── id (primary key)
+├── notebook_id (foreign key)
+├── content (text, nullable if image-only)
+├── image_path (nullable if text-only)
+├── display_time (editable, used for ordering)
+├── created_at
+├── updated_at
+├── is_starred (boolean)
+├── is_deleted (boolean, soft delete)
+├── deleted_at (nullable)
+```
+
+---
+
+### Screen Specifications
+
+#### 1. Main Screen (Notebook List)
+
+**Layout:**
+```
+┌─────────────────────────────┐
+│  App Title          [🔍][⚙️] │
+├─────────────────────────────┤
+│                             │
+│  PINNED                     │
+│  ┌─────────┐  ┌─────────┐   │
+│  │📌Work   │  │📌Ideas  │   │
+│  │ Preview │  │ Preview │   │
+│  │ 2h ago  │  │ 1d ago  │   │
+│  └─────────┘  └─────────┘   │
+│                             │
+│  NOTEBOOKS                  │
+│  ┌─────────┐  ┌─────────┐   │
+│  │ Travel  │  │ Books   │   │
+│  │ Preview │  │ Preview │   │
+│  │ 3d ago  │  │ 1w ago  │   │
+│  └─────────┘  └─────────┘   │
+│                             │
+│  ARCHIVED (collapsed)    ▼  │
+│                             │
+│                       [+]   │
+└─────────────────────────────┘
+```
+
+**Sections:**
+- **Pinned**: Pinned notebooks at top
+- **Notebooks**: Regular active notebooks
+- **Archived**: Collapsed section, tap to expand
+
+**Notebook Card displays:**
+- Title
+- Color indicator (background tint or left border)
+- Pin icon (if pinned)
+- Preview of most recent entry
+- Relative timestamp ("2h ago", "Yesterday")
+
+**Actions:**
+- Tap → Open notebook
+- Long-press → Options menu (pin/unpin, edit, change color, archive, delete)
+- FAB (+) → Create new notebook
+
+---
+
+#### 2. Global Search Screen
+
+**Triggered from:** Search icon on main screen
+
+**Behavior:**
+- Searches across ALL notebooks (including archived)
+- Searches entry text content
+- Real-time results as user types
+- Does NOT search trash
+
+**Result Item displays:**
+- Matching text with highlighted search term
+- Notebook name
+- Entry timestamp
+- Image thumbnail (if entry has image)
+- Star indicator (if starred)
+
+**Action:** Tap result → Navigate to entry in notebook
+
+---
+
+#### 3. Notebook Screen (Entry Timeline)
+
+**Layout:**
+```
+┌─────────────────────────────┐
+│  ←  Notebook Title  [🔍][📅][⋮] │
+├─────────────────────────────┤
+│                             │
+│  ── Monday, Jan 15, 2025 ── │
+│                             │
+│  9:15 AM                    │
+│  ┌───────────────────────┐  │
+│  │ ⭐ Entry text here    │  │
+│  └───────────────────────┘  │
+│  ┌───────────────────────┐  │
+│  │ Another entry (2 min) │  │
+│  └───────────────────────┘  │
+│                             │
+│        · · ·                │
+│                             │
+│  2:30 PM                    │
+│  ┌───────────────────────┐  │
+│  │ Later entry           │  │
+│  │ [  image thumbnail  ] │  │
+│  └───────────────────────┘  │
+│                             │
+│  ── Tuesday, Jan 16 ─────── │
+│                             │
+├─────────────────────────────┤
+│  [📷] [Type a message...][➤]│
+└─────────────────────────────┘
+```
+
+**Header Icons:**
+- 🔍 Search within this notebook only
+- 📅 Jump to date
+- ⋮ More options (edit notebook, export, archive, delete)
+
+**Time-Based Visual Grouping:**
+
+| Time Gap | Visual Treatment |
+|----------|------------------|
+| < 5 minutes | Minimal spacing, timestamp not repeated |
+| 5-30 minutes | Small gap, show timestamp |
+| 30 min - 2 hours | Medium gap, subtle separator |
+| 2+ hours | Large gap, clear time label |
+| Different day | **Bold date header** |
+
+**Entry Bubble displays:**
+- Star icon (if starred)
+- Text content
+- Image (if present, tappable for full-screen)
+- Timestamp
+
+**Entry Actions:**
+- Tap → Edit entry
+- Long-press → Quick actions (star/unstar, delete, move)
+
+---
+
+#### 4. Local Search (Within Notebook)
+
+**Triggered from:** Search icon in notebook header
+
+**Behavior:**
+- Searches ONLY current notebook entries
+- Real-time filtering
+- Highlights matching text
+
+**Action:** Tap result → Scroll to entry
+
+---
+
+#### 5. Jump to Date
+
+**Triggered from:** Calendar icon in notebook header
+
+**Behavior:**
+- Date picker dialog opens
+- Select date → Scroll to first entry of that date
+- If no entries on date → Show message or jump to nearest date
+
+---
+
+#### 6. Entry Input Bar
+
+**Location:** Fixed at bottom of notebook screen
+
+**Layout:**
+```
+┌─────────────────────────────────────┐
+│ [📷] [Type a message...       ] [➤] │
+└─────────────────────────────────────┘
+```
+
+**Behavior:**
+- Auto-expands up to max height as user types
+- Scrollable after max height
+- Collapses after sending
+- Send saves entry with current timestamp
+
+**Image Input:**
+- Camera icon opens picker (camera or gallery)
+- Selected image shows preview above input
+- Can add text caption with image
+
+**Custom Time Entry:**
+- Long-press send button → Time picker
+- Set custom display_time before sending
+
+---
+
+#### 7. Entry Edit Screen/Modal
+
+**Editable Fields:**
+- Content (text)
+- Display time (date and time)
+- Replace/remove image
+- Toggle star
+
+**Actions:**
+- Save changes
+- Delete entry (moves to trash)
+- Move to different notebook
+
+---
+
+#### 8. Trash Screen
+
+**Access:** Settings or main screen menu
+
+**Behavior:**
+- Shows all soft-deleted entries from all notebooks
+- Entries auto-delete after 30 days
+- Entry displays: content preview, original notebook name, deleted date
+
+**Actions:**
+- Tap → Preview entry
+- Restore → Returns to original notebook
+- Delete permanently → Immediate removal
+- Empty trash → Delete all permanently
+
+---
+
+#### 9. Settings Screen
+
+**Options:**
+- **Trash** → View deleted entries
+- **Export All Data** → Full backup
+- **Import Data** → Restore from backup
+- **Theme** → Light/Dark mode
+- **About** → App version
+
+---
+
+### Import/Export Specification
+
+**Export Format:** ZIP containing JSON + images
+
+**Single Notebook Export:**
+- From notebook overflow menu
+- Exports one notebook with all entries
+
+**Full Backup Export:**
+- From settings
+- Exports all notebooks (excludes trash)
+
+**Export Structure:**
+```
+backup.zip
+├── data.json
+└── images/
+    ├── image_001.jpg
+    └── image_002.jpg
+```
+
+**JSON Structure:**
+```json
+{
+  "app_version": "1.0.0",
+  "export_date": "2025-01-15T10:30:00Z",
+  "notebooks": [
+    {
+      "id": "uuid",
+      "title": "Work Notes",
+      "color": "#FF5733",
+      "is_pinned": true,
+      "is_archived": false,
+      "created_at": "2025-01-01T08:00:00Z",
+      "entries": [
+        {
+          "id": "uuid",
+          "content": "Entry text",
+          "image_filename": "image_001.jpg",
+          "display_time": "2025-01-15T09:30:00Z",
+          "is_starred": false,
+          "created_at": "2025-01-15T09:30:00Z"
+        }
+      ]
+    }
+  ]
+}
+```
+
+**Import:**
+- Select ZIP file
+- Option: Merge or Replace
+- Handles duplicates by ID
+
+---
+
+### Complete Feature List
+
+| Feature | Priority |
+|---------|----------|
+| Create/edit/delete notebooks | Must Have |
+| Notebook colors | Must Have |
+| Pin notebooks | Must Have |
+| Archive notebooks | Must Have |
+| Text entries | Must Have |
+| Image entries | Must Have |
+| Time-based visual grouping | Must Have |
+| Date headers/separators | Must Have |
+| Edit entry content | Must Have |
+| Edit entry display time | Must Have |
+| Insert with custom time | Must Have |
+| Star/favorite entries | Must Have |
+| Move entry between notebooks | Must Have |
+| Trash/recently deleted (30 days) | Must Have |
+| Global search (all notebooks) | Must Have |
+| Local search (within notebook) | Must Have |
+| Search result highlighting | Must Have |
+| Jump to date in notebook | Must Have |
+| Export single notebook | Must Have |
+| Export full backup | Must Have |
+| Import from backup | Must Have |
+| Full-screen image viewer | Must Have |
+| Auto-expanding input | Must Have |
+| Dark mode | Nice to Have |
+
+---
+
+### Folder Structure
+
+```
+lib/
+├── main.dart
+├── models/
+│   ├── notebook.dart
+│   └── entry.dart
+├── database/
+│   └── database_helper.dart
+├── screens/
+│   ├── home_screen.dart
+│   ├── notebook_screen.dart
+│   ├── search_screen.dart
+│   ├── entry_edit_screen.dart
+│   ├── trash_screen.dart
+│   └── settings_screen.dart
+├── widgets/
+│   ├── notebook_card.dart
+│   ├── entry_bubble.dart
+│   ├── date_header.dart
+│   ├── input_bar.dart
+│   └── search_result_item.dart
+├── services/
+│   ├── export_service.dart
+│   └── import_service.dart
+└── utils/
+    ├── time_utils.dart
+    └── constants.dart
+```
+
+---
+
+### Acceptance Criteria
+
+1. Capturing an entry takes under 5 seconds
+2. Entries within 5 minutes are visually grouped
+3. Different days have clear date separators
+4. Entry timestamp can be edited and reorders correctly
+5. Starred entries display star icon
+6. Deleted entries go to trash for 30 days
+7. Archived notebooks hidden but accessible
+8. Pinned notebooks appear at top
+9. Global search finds entries across all notebooks
+10. Local search finds entries in current notebook only
+11. Jump to date navigates correctly
+12. Export creates valid ZIP with JSON and images
+13. Import restores all data correctly
+14. App works fully offline
+
+---

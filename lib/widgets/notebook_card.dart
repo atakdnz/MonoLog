@@ -61,6 +61,7 @@ class _NotebookCardState extends State<NotebookCard> {
         ThemeData.estimateBrightnessForColor(notebookColor) == Brightness.light
         ? Colors.black87
         : Colors.white;
+    final isClassic = widget.notebook.entryStyle == NotebookEntryStyles.classic;
 
     return Container(
       decoration: BoxDecoration(
@@ -109,6 +110,24 @@ class _NotebookCardState extends State<NotebookCard> {
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
+                    const SizedBox(width: 8),
+                    Tooltip(
+                      message: isClassic ? 'Classic note' : 'Chat notebook',
+                      child: Container(
+                        padding: const EdgeInsets.all(5),
+                        decoration: BoxDecoration(
+                          color: textColor.withOpacity(0.12),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(
+                          isClassic
+                              ? Icons.notes_outlined
+                              : Icons.chat_bubble_outline,
+                          size: 14,
+                          color: textColor.withOpacity(0.82),
+                        ),
+                      ),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -135,7 +154,6 @@ class _NotebookCardState extends State<NotebookCard> {
                         ),
                 ),
 
-                // Timestamp with subtle background
                 if (_previewEntry != null)
                   Container(
                     padding: const EdgeInsets.symmetric(
@@ -152,6 +170,8 @@ class _NotebookCardState extends State<NotebookCard> {
                         color: textColor.withOpacity(0.8),
                         fontWeight: FontWeight.w500,
                       ),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
               ],

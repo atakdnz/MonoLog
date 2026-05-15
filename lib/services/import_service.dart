@@ -182,6 +182,7 @@ class ImportService {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         title: '${originalNotebook.title} (Imported)',
         color: originalNotebook.color,
+        entryStyle: originalNotebook.entryStyle,
         isPinned: false,
         isArchived: false,
         createdAt: DateTime.now(),

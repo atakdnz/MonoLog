@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../database/database_helper.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
+import '../utils/constants.dart';
 
 class NotebooksProvider with ChangeNotifier {
   final DatabaseHelper _db = DatabaseHelper();
@@ -45,8 +46,13 @@ class NotebooksProvider with ChangeNotifier {
   Future<Notebook> createNotebook({
     required String title,
     required String color,
+    String entryStyle = NotebookEntryStyles.chat,
   }) async {
-    final notebook = Notebook(title: title, color: color);
+    final notebook = Notebook(
+      title: title,
+      color: color,
+      entryStyle: entryStyle,
+    );
     await _db.insertNotebook(notebook);
     await loadNotebooks();
     return notebook;

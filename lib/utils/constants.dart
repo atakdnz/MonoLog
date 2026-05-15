@@ -28,6 +28,11 @@ class NotebookColors {
   static Color getDefault() => colors[0];
 }
 
+class NotebookEntryStyles {
+  static const String chat = 'chat';
+  static const String classic = 'classic';
+}
+
 /// Time gap thresholds for visual grouping (in minutes)
 class TimeGaps {
   static const int minimal = 5; // < 5 min: minimal spacing

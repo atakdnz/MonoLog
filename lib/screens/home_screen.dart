@@ -54,6 +54,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void _showCreateNotebookDialog() {
     final titleController = TextEditingController();
     String selectedColor = NotebookColors.toHex(NotebookColors.getDefault());
+    String selectedEntryStyle = NotebookEntryStyles.chat;
 
     showModalBottomSheet(
       context: context,
@@ -112,6 +113,32 @@ class _HomeScreenState extends State<HomeScreen> {
                         borderSide: BorderSide.none,
                       ),
                     ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text(
+                    'Note Style',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                        value: NotebookEntryStyles.chat,
+                        icon: Icon(Icons.chat_bubble_outline),
+                        label: Text('Chat'),
+                      ),
+                      ButtonSegment(
+                        value: NotebookEntryStyles.classic,
+                        icon: Icon(Icons.notes_outlined),
+                        label: Text('Classic'),
+                      ),
+                    ],
+                    selected: {selectedEntryStyle},
+                    onSelectionChanged: (selection) {
+                      setModalState(() => selectedEntryStyle = selection.first);
+                    },
                   ),
                   const SizedBox(height: 20),
                   Text(
@@ -175,7 +202,11 @@ class _HomeScreenState extends State<HomeScreen> {
 
                         final notebook = await context
                             .read<NotebooksProvider>()
-                            .createNotebook(title: title, color: selectedColor);
+                            .createNotebook(
+                              title: title,
+                              color: selectedColor,
+                              entryStyle: selectedEntryStyle,
+                            );
 
                         if (mounted) {
                           Navigator.pop(context);

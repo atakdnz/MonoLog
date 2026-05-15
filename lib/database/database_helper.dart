@@ -25,7 +25,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -40,6 +40,7 @@ class DatabaseHelper {
         is_pinned INTEGER DEFAULT 0,
         is_archived INTEGER DEFAULT 0,
         is_deleted INTEGER DEFAULT 0,
+        entry_style TEXT DEFAULT 'chat',
         deleted_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -86,6 +87,11 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE notebooks ADD COLUMN deleted_at TEXT');
       await db.execute(
         'CREATE INDEX idx_notebooks_is_deleted ON notebooks(is_deleted)',
+      );
+    }
+    if (oldVersion < 3) {
+      await db.execute(
+        "ALTER TABLE notebooks ADD COLUMN entry_style TEXT DEFAULT 'chat'",
       );
     }
   }

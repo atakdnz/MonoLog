@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -32,18 +33,26 @@ class NotebookScreen extends StatefulWidget {
 
 class _NotebookScreenState extends State<NotebookScreen> {
   final _scrollController = ScrollController();
+  final _classicController = TextEditingController();
   late Notebook _notebook;
   bool _isSearching = false;
   bool _showStarredOnly = false;
   final _searchController = TextEditingController();
   List<Entry> _searchResults = [];
+  Timer? _classicSaveDebounce;
+  String? _classicEntryId;
+  bool _isApplyingClassicText = false;
 
   @override
   void initState() {
     super.initState();
     _notebook = widget.notebook;
+    _classicController.addListener(_scheduleClassicSave);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<EntriesProvider>().setNotebook(_notebook.id).then((_) {
+        if (_notebook.entryStyle == NotebookEntryStyles.classic && mounted) {
+          _syncClassicEditor();
+        }
         if (widget.initialEntryId != null && mounted) {
           _scrollToEntry(widget.initialEntryId!);
         }
@@ -53,9 +62,62 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
   @override
   void dispose() {
+    _classicSaveDebounce?.cancel();
     _scrollController.dispose();
+    _classicController.dispose();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _syncClassicEditor() {
+    final entries = context.read<EntriesProvider>().entries;
+    final entry = entries.isEmpty ? null : entries.first;
+    _classicEntryId = entry?.id;
+    _isApplyingClassicText = true;
+    _classicController.text = entry?.content ?? '';
+    _classicController.selection = TextSelection.collapsed(
+      offset: _classicController.text.length,
+    );
+    _isApplyingClassicText = false;
+  }
+
+  void _scheduleClassicSave() {
+    if (_isApplyingClassicText ||
+        _notebook.entryStyle != NotebookEntryStyles.classic) {
+      return;
+    }
+
+    _classicSaveDebounce?.cancel();
+    _classicSaveDebounce = Timer(const Duration(milliseconds: 700), () {
+      _saveClassicNote();
+    });
+  }
+
+  Future<void> _saveClassicNote() async {
+    if (!mounted || _notebook.entryStyle != NotebookEntryStyles.classic) return;
+
+    final provider = context.read<EntriesProvider>();
+    final text = _classicController.text;
+
+    if (_classicEntryId == null) {
+      if (text.trim().isEmpty) return;
+      final entry = await provider.addEntry(content: text);
+      _classicEntryId = entry.id;
+      return;
+    }
+
+    final entry = await provider.getEntry(_classicEntryId!);
+    if (entry == null) {
+      _classicEntryId = null;
+      if (text.trim().isNotEmpty) {
+        final newEntry = await provider.addEntry(content: text);
+        _classicEntryId = newEntry.id;
+      }
+      return;
+    }
+
+    if (entry.content == text) return;
+    await provider.updateEntry(entry.copyWith(content: text));
   }
 
   Future<String?> _saveImage(String sourcePath) async {
@@ -375,7 +437,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     final chatBackground = Color.lerp(
       Theme.of(context).scaffoldBackgroundColor,
       notebookColor,
-      isDark ? 0.10 : 0.07,
+      isDark ? 0.13 : 0.16,
     )!;
 
     return Scaffold(
@@ -396,24 +458,27 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
         actions: [
-          IconButton(
-            icon: Icon(_isSearching ? Icons.close : Icons.search),
-            onPressed: _toggleSearch,
-          ),
+          if (_notebook.entryStyle == NotebookEntryStyles.chat)
+            IconButton(
+              icon: Icon(_isSearching ? Icons.close : Icons.search),
+              onPressed: _toggleSearch,
+            ),
           if (!_isSearching) ...[
-            IconButton(
-              icon: Icon(
-                _showStarredOnly ? Icons.star : Icons.star_border,
-                color: _showStarredOnly ? Colors.amber[600] : null,
+            if (_notebook.entryStyle == NotebookEntryStyles.chat) ...[
+              IconButton(
+                icon: Icon(
+                  _showStarredOnly ? Icons.star : Icons.star_border,
+                  color: _showStarredOnly ? Colors.amber[600] : null,
+                ),
+                onPressed: () =>
+                    setState(() => _showStarredOnly = !_showStarredOnly),
+                tooltip: _showStarredOnly ? 'Show all' : 'Show starred only',
               ),
-              onPressed: () =>
-                  setState(() => _showStarredOnly = !_showStarredOnly),
-              tooltip: _showStarredOnly ? 'Show all' : 'Show starred only',
-            ),
-            IconButton(
-              icon: const Icon(Icons.calendar_today),
-              onPressed: _showJumpToDatePicker,
-            ),
+              IconButton(
+                icon: const Icon(Icons.calendar_today),
+                onPressed: _showJumpToDatePicker,
+              ),
+            ],
             PopupMenuButton<String>(
               onSelected: (value) async {
                 switch (value) {
@@ -446,10 +511,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   value: 'export',
                   child: Text('Export Notebook'),
                 ),
-                const PopupMenuItem(
-                  value: 'import',
-                  child: Text('Import and Merge'),
-                ),
+                if (_notebook.entryStyle == NotebookEntryStyles.chat)
+                  const PopupMenuItem(
+                    value: 'import',
+                    child: Text('Import and Merge'),
+                  ),
                 PopupMenuItem(
                   value: 'archive',
                   child: Text(_notebook.isArchived ? 'Unarchive' : 'Archive'),
@@ -477,6 +543,17 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 builder: (context, provider, _) {
                   if (provider.isLoading) {
                     return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (_notebook.entryStyle == NotebookEntryStyles.classic) {
+                    if (_classicEntryId == null &&
+                        _classicController.text.isEmpty &&
+                        provider.entries.isNotEmpty) {
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) _syncClassicEditor();
+                      });
+                    }
+                    return _buildClassicEditor(notebookColor);
                   }
 
                   var entries =
@@ -516,11 +593,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 },
               ),
             ),
-            InputBar(
-              onSend: _handleSend,
-              enabled: !_isSearching,
-              notebookColor: notebookColor,
-            ),
+            if (_notebook.entryStyle == NotebookEntryStyles.chat)
+              InputBar(
+                onSend: _handleSend,
+                enabled: !_isSearching,
+                notebookColor: notebookColor,
+              ),
           ],
         ),
       ),
@@ -554,6 +632,46 @@ class _NotebookScreenState extends State<NotebookScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildClassicEditor(Color notebookColor) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    final editorColor = Color.lerp(
+      theme.colorScheme.surface,
+      notebookColor,
+      isDark ? 0.10 : 0.08,
+    )!;
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+      child: Material(
+        color: editorColor,
+        borderRadius: BorderRadius.circular(18),
+        clipBehavior: Clip.antiAlias,
+        child: TextField(
+          controller: _classicController,
+          autofocus: true,
+          expands: true,
+          minLines: null,
+          maxLines: null,
+          textAlignVertical: TextAlignVertical.top,
+          keyboardType: TextInputType.multiline,
+          textCapitalization: TextCapitalization.sentences,
+          style: theme.textTheme.bodyLarge?.copyWith(height: 1.55),
+          decoration: InputDecoration(
+            hintText: 'Start writing...',
+            filled: true,
+            fillColor: Colors.transparent,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.all(18),
+            hintStyle: TextStyle(
+              color: theme.colorScheme.onSurface.withOpacity(0.35),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -598,7 +716,6 @@ class _NotebookScreenState extends State<NotebookScreen> {
       widgets.add(SizedBox(height: aboveSpacing));
     }
 
-    // Entry bubble
     widgets.add(
       EntryBubble(
         entry: entry,

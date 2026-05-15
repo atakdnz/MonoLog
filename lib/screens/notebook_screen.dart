@@ -349,6 +349,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: false,
         title: _isSearching
             ? TextField(
                 controller: _searchController,
@@ -673,6 +674,20 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Drag handle
+                  Center(
+                    child: Container(
+                      width: 40,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 16),
+                      decoration: BoxDecoration(
+                        color: Theme.of(
+                          context,
+                        ).colorScheme.onSurface.withOpacity(0.1),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
                   Text(
                     'Edit Notebook',
                     style: Theme.of(context).textTheme.headlineSmall?.copyWith(

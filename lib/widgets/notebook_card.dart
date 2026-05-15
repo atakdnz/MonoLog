@@ -55,29 +55,33 @@ class _NotebookCardState extends State<NotebookCard> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final notebookColor = NotebookColors.fromHex(widget.notebook.color);
-    final isLight =
-        ThemeData.estimateBrightnessForColor(notebookColor) == Brightness.light;
+    final textColor =
+        ThemeData.estimateBrightnessForColor(notebookColor) == Brightness.light
+        ? Colors.black87
+        : Colors.white;
 
-    return Card(
-      clipBehavior: Clip.antiAlias,
-      elevation: 2,
-      shadowColor: notebookColor.withOpacity(0.3),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: InkWell(
-        onTap: widget.onTap,
-        onLongPress: widget.onLongPress,
-        child: Container(
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-              colors: [
-                notebookColor.withOpacity(0.15),
-                notebookColor.withOpacity(0.05),
-              ],
-            ),
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: notebookColor.withOpacity(isDark ? 0.2 : 0.25),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
+        ],
+      ),
+      child: Material(
+        color: notebookColor,
+        borderRadius: BorderRadius.circular(16),
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: widget.onTap,
+          onLongPress: widget.onLongPress,
+          splashColor: textColor.withOpacity(0.1),
+          highlightColor: textColor.withOpacity(0.05),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -87,7 +91,11 @@ class _NotebookCardState extends State<NotebookCard> {
                 Row(
                   children: [
                     if (widget.notebook.isPinned) ...[
-                      Icon(Icons.push_pin, size: 16, color: notebookColor),
+                      Icon(
+                        Icons.push_pin,
+                        size: 16,
+                        color: textColor.withOpacity(0.7),
+                      ),
                       const SizedBox(width: 4),
                     ],
                     Expanded(
@@ -95,9 +103,7 @@ class _NotebookCardState extends State<NotebookCard> {
                         widget.notebook.title,
                         style: theme.textTheme.titleMedium?.copyWith(
                           fontWeight: FontWeight.w600,
-                          color: isLight
-                              ? notebookColor.withOpacity(0.9)
-                              : notebookColor,
+                          color: textColor,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -115,26 +121,37 @@ class _NotebookCardState extends State<NotebookCard> {
                       ? Text(
                           'No entries yet',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withOpacity(0.5),
+                            color: textColor.withOpacity(0.6),
                             fontStyle: FontStyle.italic,
                           ),
                         )
                       : Text(
                           _previewEntry!.content ?? '📷 Image',
                           style: theme.textTheme.bodySmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withOpacity(0.7),
+                            color: textColor.withOpacity(0.8),
                           ),
                           maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                 ),
 
-                // Timestamp
+                // Timestamp with subtle background
                 if (_previewEntry != null)
-                  Text(
-                    TimeUtils.getRelativeTime(_previewEntry!.displayTime),
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      color: theme.colorScheme.onSurface.withOpacity(0.5),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 4,
+                    ),
+                    decoration: BoxDecoration(
+                      color: textColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      TimeUtils.getRelativeTime(_previewEntry!.displayTime),
+                      style: theme.textTheme.labelSmall?.copyWith(
+                        color: textColor.withOpacity(0.8),
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
               ],

@@ -176,89 +176,64 @@ class _InputBarState extends State<InputBar> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
     final hasContent =
         _textController.text.isNotEmpty || _attachedImagePath != null;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        boxShadow: [
-          BoxShadow(
-            color: theme.colorScheme.shadow.withAlpha(25),
-            blurRadius: 8,
-            offset: const Offset(0, -2),
-          ),
-        ],
-      ),
-      child: SafeArea(
-        top: false,
+    const primary = Color(0xFF3b19e6);
+
+    return SafeArea(
+      top: false,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Custom time indicator
             if (_selectedTime != null)
               Container(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: primary.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(20),
+                ),
                 child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.schedule,
-                      size: 16,
-                      color: widget.notebookColor ?? theme.colorScheme.primary,
-                    ),
-                    const SizedBox(width: 8),
+                    Icon(Icons.schedule, size: 14, color: primary),
+                    const SizedBox(width: 6),
                     InkWell(
                       onTap: _showTimeOnlyPicker,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 2,
-                        ),
-                        child: Text(
-                          TimeUtils.getEntryTime(_selectedTime!),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color:
-                                widget.notebookColor ??
-                                theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      child: Text(
+                        TimeUtils.getEntryTime(_selectedTime!),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: primary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                    const SizedBox(width: 4),
                     Text(
-                      '•',
-                      style: TextStyle(color: theme.colorScheme.outline),
+                      ' • ',
+                      style: TextStyle(color: primary.withOpacity(0.5)),
                     ),
-                    const SizedBox(width: 4),
                     InkWell(
                       onTap: _showDatePicker,
-                      borderRadius: BorderRadius.circular(8),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 4,
-                          vertical: 2,
-                        ),
-                        child: Text(
-                          TimeUtils.formatDate(_selectedTime!),
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color:
-                                widget.notebookColor ??
-                                theme.colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                          ),
+                      child: Text(
+                        TimeUtils.formatDate(_selectedTime!),
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: primary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
                     ),
-                    const Spacer(),
+                    const SizedBox(width: 8),
                     GestureDetector(
                       onTap: _clearSelectedTime,
-                      child: Icon(
-                        Icons.close,
-                        size: 18,
-                        color: theme.colorScheme.outline,
-                      ),
+                      child: Icon(Icons.close, size: 14, color: primary),
                     ),
                   ],
                 ),
@@ -267,11 +242,22 @@ class _InputBarState extends State<InputBar> {
             // Image preview
             if (_attachedImagePath != null)
               Container(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                height: 100,
+                margin: const EdgeInsets.only(bottom: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(16),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
                 child: Stack(
                   children: [
                     ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(16),
                       child: Image.file(
                         File(_attachedImagePath!),
                         height: 100,
@@ -287,12 +273,12 @@ class _InputBarState extends State<InputBar> {
                         child: Container(
                           padding: const EdgeInsets.all(4),
                           decoration: BoxDecoration(
-                            color: Colors.black.withAlpha(153),
+                            color: Colors.black.withOpacity(0.6),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
                             Icons.close,
-                            size: 16,
+                            size: 14,
                             color: Colors.white,
                           ),
                         ),
@@ -303,24 +289,38 @@ class _InputBarState extends State<InputBar> {
               ),
 
             // Input row
-            Padding(
-              padding: const EdgeInsets.all(12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+              decoration: BoxDecoration(
+                color: isDark ? const Color(0xFF1F1B2E) : Colors.white,
+                borderRadius: BorderRadius.circular(28),
+                border: Border.all(
+                  color: isDark
+                      ? Colors.white.withOpacity(0.08)
+                      : Colors.black.withOpacity(0.08),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.2 : 0.08),
+                    blurRadius: 12,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
               child: Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // Camera button
                   IconButton(
                     onPressed: widget.enabled ? _pickImage : null,
                     icon: Icon(
                       Icons.camera_alt_outlined,
-                      color: theme.colorScheme.onSurface.withAlpha(153),
+                      color: isDark
+                          ? const Color(0xFF9C93C8)
+                          : Colors.grey[600],
                     ),
-                    style: IconButton.styleFrom(
-                      backgroundColor:
-                          theme.colorScheme.surfaceContainerHighest,
-                    ),
+                    visualDensity: VisualDensity.compact,
                   ),
-                  const SizedBox(width: 4),
 
                   // Time button
                   IconButton(
@@ -330,75 +330,94 @@ class _InputBarState extends State<InputBar> {
                           ? Icons.schedule
                           : Icons.schedule_outlined,
                       color: _selectedTime != null
-                          ? (widget.notebookColor ?? theme.colorScheme.primary)
-                          : theme.colorScheme.onSurface.withAlpha(153),
+                          ? primary
+                          : (isDark
+                                ? const Color(0xFF9C93C8)
+                                : Colors.grey[600]),
                     ),
-                    style: IconButton.styleFrom(
-                      backgroundColor: _selectedTime != null
-                          ? (widget.notebookColor ?? theme.colorScheme.primary)
-                                .withAlpha(30)
-                          : theme.colorScheme.surfaceContainerHighest,
-                    ),
+                    visualDensity: VisualDensity.compact,
                   ),
-                  const SizedBox(width: 8),
 
                   // Text input
                   Expanded(
                     child: Container(
-                      constraints: BoxConstraints(
-                        minHeight: inputBarMinHeight,
-                        maxHeight: inputBarMinHeight * inputBarMaxLines,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: theme.colorScheme.surfaceContainerHighest,
-                        borderRadius: BorderRadius.circular(24),
+                        color: isDark
+                            ? const Color(0xFF2A2447).withOpacity(0.5)
+                            : Colors.grey[100],
+                        borderRadius: BorderRadius.circular(20),
                       ),
                       child: TextField(
                         controller: _textController,
                         focusNode: _focusNode,
                         enabled: widget.enabled,
-                        maxLines: null,
+                        maxLines: 4,
+                        minLines: 1,
                         keyboardType: TextInputType.multiline,
                         textCapitalization: TextCapitalization.sentences,
+                        style: TextStyle(
+                          color: isDark ? Colors.white : Colors.black87,
+                        ),
                         decoration: InputDecoration(
-                          hintText: 'Type a message...',
+                          hintText: 'Type your thoughts...',
                           hintStyle: TextStyle(
-                            color: theme.colorScheme.onSurface.withAlpha(102),
+                            color: isDark
+                                ? const Color(0xFF9C93C8)
+                                : Colors.grey[500],
                           ),
-                          contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
+                          contentPadding: EdgeInsets.zero,
                           border: InputBorder.none,
+                          isDense: true,
                         ),
                         onChanged: (_) => setState(() {}),
                       ),
                     ),
                   ),
-                  const SizedBox(width: 8),
 
                   // Send button
-                  IconButton(
-                    onPressed: hasContent && widget.enabled && !_isSending
-                        ? _send
-                        : null,
-                    icon: _isSending
-                        ? SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: theme.colorScheme.onPrimary,
-                            ),
-                          )
-                        : const Icon(Icons.send),
-                    style: IconButton.styleFrom(
-                      backgroundColor: hasContent
-                          ? (widget.notebookColor ?? theme.colorScheme.primary)
-                          : theme.colorScheme.surfaceContainerHighest,
-                      foregroundColor: hasContent
-                          ? Colors.white
-                          : theme.colorScheme.onSurface.withAlpha(102),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: hasContent
+                          ? primary
+                          : (isDark
+                                ? const Color(0xFF2A2447)
+                                : Colors.grey[200]),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: hasContent && widget.enabled && !_isSending
+                            ? _send
+                            : null,
+                        borderRadius: BorderRadius.circular(20),
+                        child: Center(
+                          child: _isSending
+                              ? const SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Colors.white,
+                                  ),
+                                )
+                              : Icon(
+                                  Icons.arrow_upward,
+                                  size: 20,
+                                  color: hasContent
+                                      ? Colors.white
+                                      : (isDark
+                                            ? const Color(0xFF9C93C8)
+                                            : Colors.grey[500]),
+                                ),
+                        ),
+                      ),
                     ),
                   ),
                 ],

@@ -371,6 +371,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
   @override
   Widget build(BuildContext context) {
     final notebookColor = NotebookColors.fromHex(_notebook.color);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final chatBackground = Color.lerp(
+      Theme.of(context).scaffoldBackgroundColor,
+      notebookColor,
+      isDark ? 0.10 : 0.07,
+    )!;
 
     return Scaffold(
       appBar: AppBar(
@@ -462,57 +468,61 @@ class _NotebookScreenState extends State<NotebookScreen> {
           ],
         ],
       ),
-      body: Column(
-        children: [
-          Expanded(
-            child: Consumer<EntriesProvider>(
-              builder: (context, provider, _) {
-                if (provider.isLoading) {
-                  return const Center(child: CircularProgressIndicator());
-                }
+      body: ColoredBox(
+        color: chatBackground,
+        child: Column(
+          children: [
+            Expanded(
+              child: Consumer<EntriesProvider>(
+                builder: (context, provider, _) {
+                  if (provider.isLoading) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
 
-                var entries = _isSearching && _searchController.text.isNotEmpty
-                    ? _searchResults
-                    : provider.entries;
+                  var entries =
+                      _isSearching && _searchController.text.isNotEmpty
+                      ? _searchResults
+                      : provider.entries;
 
-                // Apply starred filter
-                if (_showStarredOnly) {
-                  entries = entries.where((e) => e.isStarred).toList();
-                }
+                  // Apply starred filter
+                  if (_showStarredOnly) {
+                    entries = entries.where((e) => e.isStarred).toList();
+                  }
 
-                if (entries.isEmpty) {
-                  return _buildEmptyState();
-                }
+                  if (entries.isEmpty) {
+                    return _buildEmptyState();
+                  }
 
-                // Entries from provider are DESC (newest first)
-                // With reverse:true ListView, index 0 appears at bottom
-                // So for time-based spacing, we compare each entry with the one BELOW it
-                return ListView.builder(
-                  controller: _scrollController,
-                  reverse: true,
-                  padding: const EdgeInsets.only(top: 8, bottom: 8),
-                  itemCount: entries.length,
-                  itemBuilder: (context, index) {
-                    final entry = entries[index];
-                    // The entry that appears ABOVE this one visually (older in time)
-                    final olderEntry = index < entries.length - 1
-                        ? entries[index + 1]
-                        : null;
-                    // The entry that appears BELOW this one visually (newer in time)
-                    final newerEntry = index > 0 ? entries[index - 1] : null;
+                  // Entries from provider are DESC (newest first)
+                  // With reverse:true ListView, index 0 appears at bottom
+                  // So for time-based spacing, we compare each entry with the one BELOW it
+                  return ListView.builder(
+                    controller: _scrollController,
+                    reverse: true,
+                    padding: const EdgeInsets.only(top: 8, bottom: 8),
+                    itemCount: entries.length,
+                    itemBuilder: (context, index) {
+                      final entry = entries[index];
+                      // The entry that appears ABOVE this one visually (older in time)
+                      final olderEntry = index < entries.length - 1
+                          ? entries[index + 1]
+                          : null;
+                      // The entry that appears BELOW this one visually (newer in time)
+                      final newerEntry = index > 0 ? entries[index - 1] : null;
 
-                    return _buildEntryItem(entry, olderEntry, newerEntry);
-                  },
-                );
-              },
+                      return _buildEntryItem(entry, olderEntry, newerEntry);
+                    },
+                  );
+                },
+              ),
             ),
-          ),
-          InputBar(
-            onSend: _handleSend,
-            enabled: !_isSearching,
-            notebookColor: notebookColor,
-          ),
-        ],
+            InputBar(
+              onSend: _handleSend,
+              enabled: !_isSearching,
+              notebookColor: notebookColor,
+            ),
+          ],
+        ),
       ),
     );
   }

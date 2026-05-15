@@ -1,7 +1,6 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import '../utils/constants.dart';
 import '../utils/time_utils.dart';
 
 class InputBar extends StatefulWidget {

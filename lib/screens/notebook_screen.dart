@@ -18,8 +18,13 @@ import 'entry_edit_screen.dart';
 
 class NotebookScreen extends StatefulWidget {
   final Notebook notebook;
+  final String? initialEntryId;
 
-  const NotebookScreen({super.key, required this.notebook});
+  const NotebookScreen({
+    super.key,
+    required this.notebook,
+    this.initialEntryId,
+  });
 
   @override
   State<NotebookScreen> createState() => _NotebookScreenState();
@@ -38,7 +43,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
     super.initState();
     _notebook = widget.notebook;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<EntriesProvider>().setNotebook(_notebook.id);
+      context.read<EntriesProvider>().setNotebook(_notebook.id).then((_) {
+        if (widget.initialEntryId != null && mounted) {
+          _scrollToEntry(widget.initialEntryId!);
+        }
+      });
     });
   }
 
@@ -171,7 +180,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
   }
 
   void _showMoveDialog(Entry entry) async {
-    final notebooks = await context.read<NotebooksProvider>().loadNotebooks();
+    await context.read<NotebooksProvider>().loadNotebooks();
     final provider = context.read<NotebooksProvider>();
     final allNotebooks = [
       ...provider.pinnedNotebooks,
@@ -266,8 +275,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
     if (selectedDate == null || !mounted) return;
 
-    // Find the index of the first entry on that date
-    int targetIndex = entries.indexWhere(
+    // Entries are sorted newest-first. With a reversed list, the last matching
+    // entry is the first one shown for that date.
+    int targetIndex = entries.lastIndexWhere(
       (e) => TimeUtils.isSameDay(e.displayTime, selectedDate),
     );
 
@@ -295,11 +305,26 @@ class _NotebookScreenState extends State<NotebookScreen> {
       );
     }
 
-    // Calculate approximate scroll position
-    // This is a rough estimate since items have variable height
-    final scrollOffset = targetIndex * 100.0;
+    _scrollToEntry(entries[targetIndex].id);
+  }
+
+  void _scrollToEntry(String entryId) {
+    final provider = context.read<EntriesProvider>();
+    final index = provider.entries.indexWhere((e) => e.id == entryId);
+    if (index < 0 || !_scrollController.hasClients) return;
+
+    setState(() {
+      _isSearching = false;
+      _showStarredOnly = false;
+      _searchController.clear();
+      _searchResults = [];
+    });
+
+    // Reversed list with variable-height rows: start with a good estimate,
+    // then let the user fine-tune naturally from the focused region.
+    final estimatedOffset = index * 100.0;
     _scrollController.animateTo(
-      scrollOffset.clamp(0, _scrollController.position.maxScrollExtent),
+      estimatedOffset.clamp(0, _scrollController.position.maxScrollExtent),
       duration: normalAnimation,
       curve: Curves.easeOut,
     );
@@ -570,28 +595,8 @@ class _NotebookScreenState extends State<NotebookScreen> {
         showTimestamp: true,
         notebookColor: NotebookColors.fromHex(_notebook.color),
         onTap: () {
-          if (_showStarredOnly) {
-            // When in starred filter, tapping navigates to original location
-            setState(() => _showStarredOnly = false);
-            // Find index in full list and scroll to it
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              final provider = context.read<EntriesProvider>();
-              final index = provider.entries.indexWhere(
-                (e) => e.id == entry.id,
-              );
-              if (index >= 0 && _scrollController.hasClients) {
-                // Estimate scroll position (rough calculation)
-                final estimatedOffset = index * 70.0;
-                _scrollController.animateTo(
-                  estimatedOffset.clamp(
-                    0,
-                    _scrollController.position.maxScrollExtent,
-                  ),
-                  duration: normalAnimation,
-                  curve: Curves.easeOut,
-                );
-              }
-            });
+          if (_showStarredOnly || _isSearching) {
+            _scrollToEntry(entry.id);
           } else {
             _navigateToEdit(entry);
           }

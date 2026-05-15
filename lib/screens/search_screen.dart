@@ -44,7 +44,12 @@ class _SearchScreenState extends State<SearchScreen> {
     if (notebook != null && mounted) {
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => NotebookScreen(notebook: notebook)),
+        MaterialPageRoute(
+          builder: (_) => NotebookScreen(
+            notebook: notebook,
+            initialEntryId: result['id'] as String?,
+          ),
+        ),
       );
     }
   }

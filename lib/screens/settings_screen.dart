@@ -471,31 +471,4 @@ class SettingsScreen extends StatelessWidget {
       ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
     }
   }
-
-  void _showAboutDialog(BuildContext context) {
-    showAboutDialog(
-      context: context,
-      applicationName: appName,
-      applicationVersion: appVersion,
-      applicationIcon: Container(
-        width: 64,
-        height: 64,
-        decoration: BoxDecoration(
-          color: Theme.of(context).colorScheme.primary,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Icon(
-          Icons.book,
-          size: 32,
-          color: Theme.of(context).colorScheme.onPrimary,
-        ),
-      ),
-      children: [
-        const SizedBox(height: 16),
-        const Text(
-          'A journal-style note-taking app with messaging-style input for capturing daily moments.',
-        ),
-      ],
-    );
-  }
 }

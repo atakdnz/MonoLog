@@ -484,7 +484,7 @@ class DatabaseHelper {
     final db = await database;
     final notebooks = await db.query(
       'notebooks',
-      where: 'is_archived = 0 AND is_deleted = 0',
+      where: 'is_deleted = 0',
       orderBy: 'created_at ASC',
     );
 

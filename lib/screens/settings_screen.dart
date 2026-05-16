@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/app_lock_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
@@ -134,6 +135,45 @@ class SettingsScreen extends StatelessWidget {
                       );
                     },
                     activeColor: primary,
+                  ),
+                );
+              },
+            ),
+          ),
+
+          const SizedBox(height: 24),
+
+          // Privacy Section
+          _buildSectionHeader(context, 'PRIVACY'),
+          const SizedBox(height: 8),
+          Container(
+            decoration: BoxDecoration(
+              color: cardBg,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isDark
+                    ? Colors.white.withOpacity(0.05)
+                    : Colors.black.withOpacity(0.05),
+              ),
+            ),
+            child: Consumer<AppLockProvider>(
+              builder: (context, appLock, _) {
+                final subtitle = appLock.canAuthenticate
+                    ? 'Require biometrics or device passcode'
+                    : 'Set up biometrics or device passcode first';
+
+                return _buildSettingsItem(
+                  context: context,
+                  icon: Icons.lock_outline,
+                  iconBg: iconBg,
+                  title: 'App Lock',
+                  subtitle: subtitle,
+                  trailing: Switch.adaptive(
+                    value: appLock.isEnabled,
+                    onChanged: appLock.isAuthenticating
+                        ? null
+                        : (value) => _setAppLock(context, value),
+                    activeThumbColor: primary,
                   ),
                 );
               },
@@ -319,6 +359,33 @@ class SettingsScreen extends StatelessWidget {
         color: isDark
             ? Colors.white.withOpacity(0.05)
             : Colors.black.withOpacity(0.05),
+      ),
+    );
+  }
+
+  Future<void> _setAppLock(BuildContext context, bool enabled) async {
+    final appLock = context.read<AppLockProvider>();
+
+    if (!enabled) {
+      await appLock.disableAppLock();
+      if (!context.mounted) return;
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('App Lock disabled')));
+      return;
+    }
+
+    final success = await appLock.enableAppLock();
+    if (!context.mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          success
+              ? 'App Lock enabled'
+              : 'Could not enable App Lock on this device',
+        ),
       ),
     );
   }

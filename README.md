@@ -17,6 +17,7 @@ A journal-style note-taking app for Android built with Flutter. MonoLog is desig
 - Trash with recovery support
 - ZIP export and import
 - Light and dark themes
+- Optional app lock with biometrics or device passcode
 
 ## Requirements
 

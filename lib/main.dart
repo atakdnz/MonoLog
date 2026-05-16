@@ -8,6 +8,8 @@ import 'providers/entries_provider.dart';
 import 'providers/trash_provider.dart';
 import 'providers/search_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/app_lock_provider.dart';
+import 'screens/app_lock_screen.dart';
 import 'screens/home_screen.dart';
 import 'utils/constants.dart';
 
@@ -35,6 +37,7 @@ class MonoLogApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => EntriesProvider()),
         ChangeNotifierProvider(create: (_) => TrashProvider()),
         ChangeNotifierProvider(create: (_) => SearchProvider()),
+        ChangeNotifierProvider(create: (_) => AppLockProvider()),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
@@ -44,7 +47,19 @@ class MonoLogApp extends StatelessWidget {
             themeMode: themeProvider.themeMode,
             theme: _buildLightTheme(),
             darkTheme: _buildDarkTheme(),
-            home: const HomeScreen(),
+            home: Consumer<AppLockProvider>(
+              builder: (context, appLock, _) {
+                if (appLock.isLoading) {
+                  return const Scaffold(
+                    body: Center(child: CircularProgressIndicator()),
+                  );
+                }
+
+                return appLock.isLocked
+                    ? const AppLockScreen()
+                    : const HomeScreen();
+              },
+            ),
           );
         },
       ),

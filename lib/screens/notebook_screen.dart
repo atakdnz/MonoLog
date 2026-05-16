@@ -45,7 +45,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
   bool _isSearching = false;
   bool _showStarredOnly = false;
   final _searchController = TextEditingController();
-  List<Entry> _searchResults = [];
+  final _searchFocusNode = FocusNode();
+  int _chatSearchCurrentMatch = 0;
+  List<String> _chatSearchMatchIds = [];
   int _classicSearchCurrentMatch = 0;
   List<TextRange> _classicSearchMatches = [];
   Timer? _classicSaveDebounce;
@@ -87,6 +89,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _scrollController.dispose();
     _classicController.dispose();
     _searchController.dispose();
+    _searchFocusNode.dispose();
     super.dispose();
   }
 
@@ -340,9 +343,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
   }
 
   List<Entry> _visibleChatEntries(EntriesProvider provider) {
-    var entries = _isSearching && _searchController.text.isNotEmpty
-        ? _searchResults
-        : provider.entries;
+    var entries = provider.entries;
 
     if (_showStarredOnly) {
       entries = entries.where((e) => e.isStarred).toList();
@@ -720,16 +721,21 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _scrollToEntry(entries[targetIndex].id);
   }
 
-  void _scrollToEntry(String entryId) {
+  void _scrollToEntry(String entryId, {bool clearSearch = true}) {
     final provider = context.read<EntriesProvider>();
     final index = provider.entries.indexWhere((e) => e.id == entryId);
     if (index < 0 || !_scrollController.hasClients) return;
 
+    if (clearSearch) {
+      setState(() {
+        _isSearching = false;
+        _searchController.clear();
+        _clearSearchMatches();
+      });
+    }
+
     setState(() {
-      _isSearching = false;
       _showStarredOnly = false;
-      _searchController.clear();
-      _searchResults = [];
     });
 
     // Reversed list with variable-height rows: start with a good estimate,
@@ -743,32 +749,72 @@ class _NotebookScreenState extends State<NotebookScreen> {
   }
 
   void _toggleSearch() {
+    final shouldEnableSearch = !_isSearching;
     setState(() {
       _selectedEntryIds.clear();
-      _isSearching = !_isSearching;
+      _isSearching = shouldEnableSearch;
       if (!_isSearching) {
         _searchController.clear();
-        _searchResults = [];
-        _clearClassicSearchMatches();
+        _clearSearchMatches();
       } else if (_notebook.entryStyle == NotebookEntryStyles.classic) {
         _updateClassicSearchMatches(_searchController.text);
+      } else {
+        _updateChatSearchMatches(_searchController.text);
       }
     });
+    if (shouldEnableSearch) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _searchFocusNode.requestFocus();
+      });
+    }
   }
 
-  Future<void> _performSearch(String query) async {
+  void _performSearch(String query) {
     if (_notebook.entryStyle == NotebookEntryStyles.classic) {
       setState(() => _updateClassicSearchMatches(query));
       return;
     }
 
-    if (query.isEmpty) {
-      setState(() => _searchResults = []);
+    setState(() => _updateChatSearchMatches(query));
+  }
+
+  void _clearSearchMatches() {
+    _clearChatSearchMatches();
+    _clearClassicSearchMatches();
+  }
+
+  void _clearChatSearchMatches() {
+    _chatSearchMatchIds = [];
+    _chatSearchCurrentMatch = 0;
+  }
+
+  void _updateChatSearchMatches(String query) {
+    final trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty) {
+      _clearChatSearchMatches();
       return;
     }
 
-    final results = await context.read<EntriesProvider>().searchEntries(query);
-    setState(() => _searchResults = results);
+    final lowerQuery = trimmedQuery.toLowerCase();
+    _chatSearchMatchIds = context
+        .read<EntriesProvider>()
+        .entries
+        .where(
+          (entry) =>
+              entry.hasContent &&
+              entry.content!.toLowerCase().contains(lowerQuery),
+        )
+        .map((entry) => entry.id)
+        .toList();
+
+    if (_chatSearchMatchIds.isEmpty) {
+      _chatSearchCurrentMatch = 0;
+    } else {
+      _chatSearchCurrentMatch = _chatSearchCurrentMatch.clamp(
+        0,
+        _chatSearchMatchIds.length - 1,
+      );
+    }
   }
 
   void _clearClassicSearchMatches() {
@@ -823,6 +869,21 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _classicController.selection = TextSelection(
       baseOffset: range.start,
       extentOffset: range.end,
+    );
+  }
+
+  void _goToChatSearchMatch(int direction) {
+    if (_chatSearchMatchIds.isEmpty) return;
+    setState(() {
+      _chatSearchCurrentMatch =
+          (_chatSearchCurrentMatch + direction) % _chatSearchMatchIds.length;
+      if (_chatSearchCurrentMatch < 0) {
+        _chatSearchCurrentMatch = _chatSearchMatchIds.length - 1;
+      }
+    });
+    _scrollToEntry(
+      _chatSearchMatchIds[_chatSearchCurrentMatch],
+      clearSearch: false,
     );
   }
 
@@ -918,6 +979,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
               : _isSearching
               ? TextField(
                   controller: _searchController,
+                  focusNode: _searchFocusNode,
                   autofocus: true,
                   decoration: InputDecoration(
                     hintText: 'Search in notebook...',
@@ -1070,7 +1132,30 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   ],
                 )
               else
-                const SizedBox.shrink(),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _chatSearchMatchIds.isEmpty
+                          ? '0/0'
+                          : '${_chatSearchCurrentMatch + 1}/${_chatSearchMatchIds.length}',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_up),
+                      tooltip: 'Previous match',
+                      onPressed: _chatSearchMatchIds.isEmpty
+                          ? null
+                          : () => _goToChatSearchMatch(-1),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down),
+                      tooltip: 'Next match',
+                      onPressed: _chatSearchMatchIds.isEmpty
+                          ? null
+                          : () => _goToChatSearchMatch(1),
+                    ),
+                  ],
+                ),
             if (!_isSearching && !_isSelectingEntries) ...[
               PopupMenuButton<String>(
                 onSelected: (value) async {
@@ -1120,21 +1205,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   if (_notebook.entryStyle == NotebookEntryStyles.classic)
                     PopupMenuItem(
                       value: 'formatting',
-                      child: Row(
-                        children: [
-                          Icon(
-                            _showClassicFormattingBar
-                                ? Icons.keyboard_hide_outlined
-                                : Icons.text_fields,
-                            size: 20,
-                          ),
-                          const SizedBox(width: 12),
-                          Text(
-                            _showClassicFormattingBar
-                                ? 'Hide Formatting'
-                                : 'Show Formatting',
-                          ),
-                        ],
+                      child: Text(
+                        _showClassicFormattingBar
+                            ? 'Hide Formatting'
+                            : 'Show Formatting',
                       ),
                     ),
                   PopupMenuItem(
@@ -1270,7 +1344,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
             Expanded(
               child: TextField(
                 controller: _classicController,
-                autofocus: true,
+                autofocus: !_isSearching,
                 expands: true,
                 minLines: null,
                 maxLines: null,
@@ -1464,6 +1538,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
         showTimestamp: true,
         notebookColor: NotebookColors.fromHex(_notebook.color),
         isSelected: _selectedEntryIds.contains(entry.id),
+        searchQuery:
+            _isSearching && _notebook.entryStyle == NotebookEntryStyles.chat
+            ? _searchController.text
+            : null,
         onTap: () {
           if (_isSelectingEntries) {
             _toggleEntrySelection(entry);

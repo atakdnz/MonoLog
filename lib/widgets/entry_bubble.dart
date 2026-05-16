@@ -1,5 +1,7 @@
 import 'dart:io';
+
 import 'package:flutter/material.dart';
+
 import '../models/entry.dart';
 import '../utils/time_utils.dart';
 
@@ -12,6 +14,7 @@ class EntryBubble extends StatelessWidget {
   final VoidCallback? onImageLongPress;
   final Color? notebookColor;
   final bool isSelected;
+  final String? searchQuery;
 
   const EntryBubble({
     super.key,
@@ -23,16 +26,14 @@ class EntryBubble extends StatelessWidget {
     this.onImageLongPress,
     this.notebookColor,
     this.isSelected = false,
+    this.searchQuery,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
-
-    // Use notebook color or fallback to primary
     final bubbleColor = notebookColor ?? const Color(0xFF3b19e6);
-    // Create a lighter version for light mode
     final bubbleColorLight = Color.lerp(bubbleColor, Colors.white, 0.85)!;
 
     return Padding(
@@ -49,7 +50,6 @@ class EntryBubble extends StatelessWidget {
             ),
             decoration: BoxDecoration(
               color: isDark ? bubbleColor : bubbleColorLight,
-              // Chat-style corners: rounded except bottom-right
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(24),
                 topRight: Radius.circular(24),
@@ -80,19 +80,20 @@ class EntryBubble extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Text content with star
                   if (entry.hasContent)
                     Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Expanded(
-                          child: Text(
-                            entry.content!,
-                            style: theme.textTheme.bodyMedium?.copyWith(
-                              height: 1.5,
-                              color: isDark
-                                  ? Colors.white
-                                  : const Color(0xFF1F1B2E),
+                          child: Text.rich(
+                            _buildHighlightedTextSpan(
+                              entry.content!,
+                              theme.textTheme.bodyMedium?.copyWith(
+                                height: 1.5,
+                                color: isDark
+                                    ? Colors.white
+                                    : const Color(0xFF1F1B2E),
+                              ),
                             ),
                           ),
                         ),
@@ -111,8 +112,6 @@ class EntryBubble extends StatelessWidget {
                         ],
                       ],
                     ),
-
-                  // Image
                   if (entry.hasImage) ...[
                     if (entry.hasContent) const SizedBox(height: 10),
                     GestureDetector(
@@ -150,7 +149,6 @@ class EntryBubble extends StatelessWidget {
                               ),
                             ),
                           ),
-                          // Star overlay for image-only entries
                           if (!entry.hasContent && entry.isStarred)
                             Positioned(
                               top: 6,
@@ -172,8 +170,6 @@ class EntryBubble extends StatelessWidget {
                       ),
                     ),
                   ],
-
-                  // Timestamp
                   if (showTimestamp) ...[
                     const SizedBox(height: 6),
                     Row(
@@ -207,5 +203,42 @@ class EntryBubble extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  TextSpan _buildHighlightedTextSpan(String text, TextStyle? baseStyle) {
+    final query = searchQuery?.trim();
+    if (query == null || query.isEmpty) {
+      return TextSpan(text: text, style: baseStyle);
+    }
+
+    final lowerText = text.toLowerCase();
+    final lowerQuery = query.toLowerCase();
+    final spans = <TextSpan>[];
+    var start = 0;
+
+    while (start < text.length) {
+      final matchIndex = lowerText.indexOf(lowerQuery, start);
+      if (matchIndex == -1) {
+        spans.add(TextSpan(text: text.substring(start)));
+        break;
+      }
+
+      if (matchIndex > start) {
+        spans.add(TextSpan(text: text.substring(start, matchIndex)));
+      }
+
+      final matchEnd = matchIndex + query.length;
+      spans.add(
+        TextSpan(
+          text: text.substring(matchIndex, matchEnd),
+          style: baseStyle?.copyWith(
+            backgroundColor: Colors.amber.withValues(alpha: 0.45),
+          ),
+        ),
+      );
+      start = matchEnd;
+    }
+
+    return TextSpan(style: baseStyle, children: spans);
   }
 }

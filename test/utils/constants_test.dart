@@ -84,7 +84,10 @@ void main() {
     });
 
     test('styles should be different', () {
-      expect(NotebookEntryStyles.chat, isNot(equals(NotebookEntryStyles.classic)));
+      expect(
+        NotebookEntryStyles.chat,
+        isNot(equals(NotebookEntryStyles.classic)),
+      );
     });
   });
 
@@ -116,8 +119,8 @@ void main() {
       expect(appName, 'MonoLog');
     });
 
-    test('app version should be 1.0.0', () {
-      expect(appVersion, '1.0.0');
+    test('app version should be 1.5.1', () {
+      expect(appVersion, '1.5.1');
     });
 
     test('quick animation should be 200ms', () {

@@ -45,7 +45,6 @@ class _NotebookDetailsScreenState extends State<NotebookDetailsScreen> {
       child: Scaffold(
         backgroundColor: tintedBackground,
         appBar: AppBar(
-          backgroundColor: tintedBackground,
           title: Text(
             _notebook.title,
             style: const TextStyle(fontWeight: FontWeight.w600),

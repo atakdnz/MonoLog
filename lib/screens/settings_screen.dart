@@ -117,18 +117,19 @@ class SettingsScreen extends StatelessWidget {
             ),
             child: Consumer<ThemeProvider>(
               builder: (context, themeProvider, _) {
+                final isDarkModeEnabled =
+                    Theme.of(context).brightness == Brightness.dark;
+
                 return _buildSettingsItem(
                   context: context,
-                  icon: themeProvider.themeMode == ThemeMode.dark
+                  icon: isDarkModeEnabled
                       ? Icons.dark_mode
-                      : themeProvider.themeMode == ThemeMode.light
-                      ? Icons.light_mode
-                      : Icons.brightness_auto,
+                      : Icons.light_mode,
                   iconBg: iconBg,
-                  title: 'Dark Mode',
+                  title: isDarkModeEnabled ? 'Dark Mode' : 'Light Mode',
                   subtitle: 'Switch between Light and Dark',
                   trailing: Switch.adaptive(
-                    value: themeProvider.themeMode == ThemeMode.dark,
+                    value: isDarkModeEnabled,
                     onChanged: (value) {
                       themeProvider.setThemeMode(
                         value ? ThemeMode.dark : ThemeMode.light,

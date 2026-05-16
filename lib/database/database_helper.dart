@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 7,
+      version: 8,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -142,6 +142,15 @@ class DatabaseHelper {
       await db.execute(
         'ALTER TABLE notebooks ADD COLUMN is_locked INTEGER DEFAULT 0',
       );
+    }
+    if (oldVersion < 8) {
+      await db.execute('''
+        CREATE TABLE drafts (
+          notebook_id TEXT PRIMARY KEY,
+          content TEXT,
+          updated_at TEXT NOT NULL
+        )
+      ''');
     }
   }
 
@@ -796,5 +805,48 @@ class DatabaseHelper {
     final db = await database;
     await db.close();
     _database = null;
+  }
+
+  // =========== DRAFT OPERATIONS ===========
+
+  Future<void> saveDraft(String notebookId, String? content) async {
+    final db = await database;
+    if (content == null || content.isEmpty) {
+      await db.delete(
+        'drafts',
+        where: 'notebook_id = ?',
+        whereArgs: [notebookId],
+      );
+    } else {
+      await db.insert(
+        'drafts',
+        {
+          'notebook_id': notebookId,
+          'content': content,
+          'updated_at': DateTime.now().toIso8601String(),
+        },
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+    }
+  }
+
+  Future<String?> getDraft(String notebookId) async {
+    final db = await database;
+    final maps = await db.query(
+      'drafts',
+      where: 'notebook_id = ?',
+      whereArgs: [notebookId],
+    );
+    if (maps.isEmpty) return null;
+    return maps.first['content'] as String?;
+  }
+
+  Future<void> deleteDraft(String notebookId) async {
+    final db = await database;
+    await db.delete(
+      'drafts',
+      where: 'notebook_id = ?',
+      whereArgs: [notebookId],
+    );
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import '../database/database_helper.dart';
 import '../models/annotation_stroke.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
@@ -38,9 +39,10 @@ class NotebookScreen extends StatefulWidget {
   State<NotebookScreen> createState() => _NotebookScreenState();
 }
 
-class _NotebookScreenState extends State<NotebookScreen> {
+class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObserver {
   final _scrollController = ScrollController();
   final _classicController = _ClassicRichTextController();
+  final _db = DatabaseHelper();
   late Notebook _notebook;
   bool _isSearching = false;
   bool _showStarredOnly = false;
@@ -60,12 +62,16 @@ class _NotebookScreenState extends State<NotebookScreen> {
   Timer? _classicHistoryDebounce;
   bool _showClassicFormattingBar = false;
   final Set<String> _selectedEntryIds = {};
+  String? _initialDraftContent;
+  String _currentChatDraftText = '';
+  bool _draftLoaded = false;
 
   bool get _isSelectingEntries => _selectedEntryIds.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _notebook = widget.notebook;
     _lastClassicSnapshot = _classicController.snapshot();
     _classicController.addListener(_trackClassicHistory);
@@ -79,11 +85,22 @@ class _NotebookScreenState extends State<NotebookScreen> {
           _scrollToEntry(widget.initialEntryId!);
         }
       });
+      _loadDraft();
     });
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _saveCurrentDraft();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _saveCurrentDraft();
     _classicSaveDebounce?.cancel();
     _classicHistoryDebounce?.cancel();
     _scrollController.dispose();
@@ -91,6 +108,46 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadDraft() async {
+    if (!mounted) return;
+    final draft = await _db.getDraft(_notebook.id);
+    if (!mounted) return;
+    setState(() {
+      _draftLoaded = true;
+      if (draft != null) {
+        _initialDraftContent = draft;
+        _currentChatDraftText = draft;
+      }
+    });
+  }
+
+  void _saveDraft(String content) {
+    _currentChatDraftText = content;
+    if (content.isEmpty) {
+      _db.saveDraft(_notebook.id, null);
+    } else {
+      _db.saveDraft(_notebook.id, content);
+    }
+  }
+
+  void _clearDraft() {
+    _currentChatDraftText = '';
+    _db.deleteDraft(_notebook.id);
+  }
+
+  void _saveCurrentDraft() {
+    if (!_draftLoaded) return;
+    if (_notebook.entryStyle == NotebookEntryStyles.chat) {
+      _db.saveDraft(
+        _notebook.id,
+        _currentChatDraftText.isEmpty ? null : _currentChatDraftText,
+      );
+    } else if (_notebook.entryStyle == NotebookEntryStyles.classic) {
+      final text = _ClassicMarkdownCodec.encode(_classicController.snapshot());
+      _db.saveDraft(_notebook.id, text.isEmpty ? null : text);
+    }
   }
 
   void _syncClassicEditor() {
@@ -246,6 +303,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
     if (entry.content == text) return;
     await provider.updateEntry(entry.copyWith(content: text));
+    _db.saveDraft(_notebook.id, text.isEmpty ? null : text);
   }
 
   Future<_SavedImage?> _saveImage(
@@ -331,6 +389,8 @@ class _NotebookScreenState extends State<NotebookScreen> {
       annotationStrokes: savedImage?.annotationStrokes,
       displayTime: customTime,
     );
+
+    _clearDraft();
 
     // Scroll to top (newest entries)
     if (_scrollController.hasClients) {
@@ -954,6 +1014,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
         } else if (!didPop && _isSearching) {
           _toggleSearch();
         }
+        if (didPop) {
+          _saveCurrentDraft();
+        }
       },
       child: Scaffold(
         appBar: AppBar(
@@ -1282,6 +1345,8 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   onSend: _handleSend,
                   enabled: !_isSearching && !_isSelectingEntries,
                   notebookColor: notebookColor,
+                  initialContent: _initialDraftContent,
+                  onContentChanged: _saveDraft,
                 ),
               if (_notebook.entryStyle == NotebookEntryStyles.classic &&
                   _showClassicFormattingBar)

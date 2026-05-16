@@ -17,12 +17,16 @@ class InputBar extends StatefulWidget {
   onSend;
   final bool enabled;
   final Color? notebookColor;
+  final String? initialContent;
+  final Function(String)? onContentChanged;
 
   const InputBar({
     super.key,
     required this.onSend,
     this.enabled = true,
     this.notebookColor,
+    this.initialContent,
+    this.onContentChanged,
   });
 
   @override
@@ -38,6 +42,29 @@ class _InputBarState extends State<InputBar> {
   List<AnnotationStroke>? _annotationStrokes;
   bool _isSending = false;
   DateTime? _selectedTime;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.initialContent != null && widget.initialContent!.isNotEmpty) {
+      _textController.text = widget.initialContent!;
+      _textController.selection = TextSelection.collapsed(
+        offset: _textController.text.length,
+      );
+    }
+  }
+
+  @override
+  void didUpdateWidget(InputBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialContent != oldWidget.initialContent &&
+        widget.initialContent != null) {
+      _textController.text = widget.initialContent!;
+      _textController.selection = TextSelection.collapsed(
+        offset: _textController.text.length,
+      );
+    }
+  }
 
   @override
   void dispose() {
@@ -493,7 +520,10 @@ class _InputBarState extends State<InputBar> {
                           border: InputBorder.none,
                           isDense: true,
                         ),
-                        onChanged: (_) => setState(() {}),
+                        onChanged: (text) {
+                          setState(() {});
+                          widget.onContentChanged?.call(text);
+                        },
                       ),
                     ),
                   ),

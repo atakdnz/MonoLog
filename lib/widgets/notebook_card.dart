@@ -2,8 +2,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import '../database/database_helper.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
+import '../models/folder.dart';
 import '../providers/notebooks_provider.dart';
 import '../utils/constants.dart';
 import '../utils/time_utils.dart';
@@ -12,6 +14,7 @@ class NotebookCard extends StatefulWidget {
   final Notebook notebook;
   final VoidCallback onTap;
   final VoidCallback onSelect;
+  final VoidCallback? onLongPressMenu;
   final bool isSelected;
 
   const NotebookCard({
@@ -19,6 +22,7 @@ class NotebookCard extends StatefulWidget {
     required this.notebook,
     required this.onTap,
     required this.onSelect,
+    this.onLongPressMenu,
     this.isSelected = false,
   });
 
@@ -85,7 +89,11 @@ class _NotebookCardState extends State<NotebookCard> {
         _selectionTimer = Timer(const Duration(milliseconds: 300), () {
           if (mounted && !widget.isSelected) {
             HapticFeedback.selectionClick();
-            widget.onSelect();
+            if (widget.onLongPressMenu != null) {
+              widget.onLongPressMenu!();
+            } else {
+              widget.onSelect();
+            }
           }
         });
       },
@@ -117,16 +125,16 @@ class _NotebookCardState extends State<NotebookCard> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Header with title and pin icon
+                    // Header with title, pin, and type indicator
                     Row(
                       children: [
                         if (widget.notebook.isPinned) ...[
                           Icon(
                             Icons.push_pin,
-                            size: 16,
+                            size: 14,
                             color: textColor.withOpacity(0.7),
                           ),
-                          const SizedBox(width: 4),
+                          const SizedBox(width: 3),
                         ],
                         Expanded(
                           child: Text(
@@ -139,22 +147,34 @@ class _NotebookCardState extends State<NotebookCard> {
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        Tooltip(
-                          message: isClassic ? 'Classic note' : 'Chat notebook',
-                          child: Container(
-                            padding: const EdgeInsets.all(5),
-                            decoration: BoxDecoration(
-                              color: textColor.withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Icon(
-                              isClassic
-                                  ? Icons.notes_outlined
-                                  : Icons.chat_bubble_outline,
-                              size: 14,
-                              color: textColor.withOpacity(0.82),
-                            ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 5,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: textColor.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                isClassic ? Icons.notes_outlined : Icons.chat_bubble_outline,
+                                size: 10,
+                                color: textColor.withOpacity(0.8),
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                isClassic ? 'Classic' : 'Chat',
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: textColor.withOpacity(0.85),
+                                  fontWeight: FontWeight.w500,
+                                  fontSize: 9,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ],
@@ -183,25 +203,80 @@ class _NotebookCardState extends State<NotebookCard> {
                             ),
                     ),
 
-                    if (_previewEntry != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: textColor.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          TimeUtils.getRelativeTime(_previewEntry!.displayTime),
-                          style: theme.textTheme.labelSmall?.copyWith(
-                            color: textColor.withOpacity(0.8),
-                            fontWeight: FontWeight.w500,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                          maxLines: 1,
-                        ),
+                    // Footer: time (left) + folder badge (right)
+                    if (_previewEntry != null || widget.notebook.folderId != null)
+                      Row(
+                        children: [
+                          // Time badge (left, always visible)
+                          if (_previewEntry != null)
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: textColor.withOpacity(0.1),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Text(
+                                TimeUtils.getRelativeTime(_previewEntry!.displayTime),
+                                style: theme.textTheme.labelSmall?.copyWith(
+                                  color: textColor.withOpacity(0.8),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                                maxLines: 1,
+                              ),
+                            ),
+                          if (_previewEntry != null) const SizedBox(width: 4),
+                          // Spacer pushes folder to the right
+                          if (widget.notebook.folderId != null) const Spacer(),
+                          // Folder badge (right, constrained)
+                          if (widget.notebook.folderId != null)
+                            ConstrainedBox(
+                              constraints: const BoxConstraints(maxWidth: 80),
+                              child: FutureBuilder<Folder?>(
+                                future: DatabaseHelper().getFolder(widget.notebook.folderId!),
+                                builder: (context, snapshot) {
+                                  if (!snapshot.hasData) return const SizedBox.shrink();
+                                  final folder = snapshot.data!;
+                                  return Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: textColor.withOpacity(0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(
+                                          Icons.folder,
+                                          size: 10,
+                                          color: textColor.withOpacity(0.8),
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Flexible(
+                                          child: Text(
+                                            folder.name,
+                                            style: theme.textTheme.labelSmall?.copyWith(
+                                              color: textColor.withOpacity(0.85),
+                                              fontWeight: FontWeight.w500,
+                                              fontSize: 9,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                        ],
                       ),
                   ],
                 ),

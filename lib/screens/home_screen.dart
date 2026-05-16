@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../models/notebook.dart';
+import '../models/folder.dart';
 import '../providers/notebooks_provider.dart';
+import '../providers/folders_provider.dart';
 import '../utils/constants.dart';
 import '../widgets/notebook_card.dart';
+import '../widgets/app_drawer.dart';
 import 'notebook_screen.dart';
 import 'search_screen.dart';
 import 'settings_screen.dart';
@@ -88,7 +91,14 @@ class _HomeScreenState extends State<HomeScreen> {
     switch (action) {
       case 'edit':
         if (selected.length == 1) {
-          _showNotebookOptions(selected.first); // Re-use the existing bottom sheet for edit
+          _showNotebookOptions(selected.first);
+        }
+        break;
+      case 'move':
+        if (selected.length == 1) {
+          _showMoveToFolderDialog(selected.first);
+        } else {
+          _showBatchMoveToFolderDialog(selected);
         }
         break;
       case 'pin':
@@ -355,6 +365,14 @@ class _HomeScreenState extends State<HomeScreen> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.drive_file_move_outline),
+                title: const Text('Move to Folder'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showMoveToFolderDialog(notebook);
+                },
+              ),
+              ListTile(
                 leading: Icon(
                   notebook.isArchived
                       ? Icons.unarchive_outlined
@@ -383,6 +401,186 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  void _showMoveToFolderDialog(Notebook notebook) {
+    final foldersProvider = context.read<FoldersProvider>();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(
+                    'Move to Folder',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.book_outlined),
+              title: const Text('No Folder (Main List)'),
+              trailing: notebook.folderId == null
+                  ? const Icon(Icons.check, color: Colors.green)
+                  : null,
+              onTap: () {
+                context
+                    .read<FoldersProvider>()
+                    .moveNotebookToFolder(notebook.id, null);
+                context.read<NotebooksProvider>().loadNotebooks();
+                Navigator.pop(context);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '"${notebook.title}" moved to main list',
+                    ),
+                  ),
+                );
+              },
+            ),
+            if (foldersProvider.folders.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No folders yet. Create one from the sidebar.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.5),
+                  ),
+                ),
+              ),
+            ...foldersProvider.folders.map(
+              (folder) => ListTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: Text(folder.name),
+                trailing: notebook.folderId == folder.id
+                    ? const Icon(Icons.check, color: Colors.green)
+                    : null,
+                onTap: () {
+                  context
+                      .read<FoldersProvider>()
+                      .moveNotebookToFolder(notebook.id, folder.id);
+                  context.read<NotebooksProvider>().loadNotebooks();
+                  Navigator.pop(context);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '"${notebook.title}" moved to "${folder.name}"',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showBatchMoveToFolderDialog(List<Notebook> notebooks) {
+    final foldersProvider = context.read<FoldersProvider>();
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Text(
+                    'Move ${notebooks.length} Notebooks',
+                    style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1),
+            ListTile(
+              leading: const Icon(Icons.book_outlined),
+              title: const Text('No Folder (Main List)'),
+              onTap: () {
+                for (var n in notebooks) {
+                  context
+                      .read<FoldersProvider>()
+                      .moveNotebookToFolder(n.id, null);
+                }
+                context.read<NotebooksProvider>().loadNotebooks();
+                Navigator.pop(context);
+                _clearSelection();
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      '${notebooks.length} notebooks moved to main list',
+                    ),
+                  ),
+                );
+              },
+            ),
+            if (foldersProvider.folders.isEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(
+                  'No folders yet. Create one from the sidebar.',
+                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.5),
+                  ),
+                ),
+              ),
+            ...foldersProvider.folders.map(
+              (folder) => ListTile(
+                leading: const Icon(Icons.folder_outlined),
+                title: Text(folder.name),
+                onTap: () {
+                  for (var n in notebooks) {
+                    context
+                        .read<FoldersProvider>()
+                        .moveNotebookToFolder(n.id, folder.id);
+                  }
+                  context.read<NotebooksProvider>().loadNotebooks();
+                  Navigator.pop(context);
+                  _clearSelection();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        '${notebooks.length} notebooks moved to "${folder.name}"',
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+          ],
         ),
       ),
     );
@@ -566,6 +764,7 @@ class _HomeScreenState extends State<HomeScreen> {
         }
       },
       child: Scaffold(
+        drawer: const AppDrawer(),
         appBar: _isSelectingNotebooks
             ? AppBar(
                 leading: IconButton(
@@ -586,6 +785,10 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Text('Edit'),
                         ),
                       const PopupMenuItem(
+                        value: 'move',
+                        child: Text('Move to Folder'),
+                      ),
+                      const PopupMenuItem(
                         value: 'pin',
                         child: Text('Pin/Unpin'),
                       ),
@@ -602,9 +805,29 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               )
             : AppBar(
-                title: const Text(
-                  'MonoLog',
-                  style: TextStyle(fontWeight: FontWeight.bold),
+                leading: Builder(
+                  builder: (context) => IconButton(
+                    icon: const Icon(Icons.menu),
+                    onPressed: () => Scaffold.of(context).openDrawer(),
+                  ),
+                ),
+                title: Consumer<FoldersProvider>(
+                  builder: (context, foldersProvider, _) {
+                    if (foldersProvider.isShowingAll) {
+                      return const Text(
+                        'MonoLog',
+                        style: TextStyle(fontWeight: FontWeight.bold),
+                      );
+                    }
+                    final folder = foldersProvider.folders.firstWhere(
+                      (f) => f.id == foldersProvider.selectedFolderId,
+                      orElse: () => Folder(name: 'Unknown'),
+                    );
+                    return Text(
+                      folder.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    );
+                  },
                 ),
                 actions: [
                   IconButton(
@@ -625,8 +848,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
           final hasNotebooks =
               provider.pinnedNotebooks.isNotEmpty ||
-              provider.regularNotebooks.isNotEmpty ||
-              provider.archivedNotebooks.isNotEmpty;
+              provider.regularNotebooks.isNotEmpty;
 
           if (!hasNotebooks) {
             return _buildEmptyState();
@@ -651,45 +873,6 @@ class _HomeScreenState extends State<HomeScreen> {
                   const SizedBox(height: 12),
                   _buildNotebookGrid(provider.regularNotebooks),
                   const SizedBox(height: 24),
-                ],
-
-                // Archived section (collapsible)
-                if (provider.archivedNotebooks.isNotEmpty) ...[
-                  InkWell(
-                    onTap: provider.toggleShowArchived,
-                    borderRadius: BorderRadius.circular(8),
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      child: Row(
-                        children: [
-                          _buildSectionHeader('ARCHIVED'),
-                          const SizedBox(width: 8),
-                          Text(
-                            '(${provider.archivedNotebooks.length})',
-                            style: Theme.of(context).textTheme.labelMedium
-                                ?.copyWith(
-                                  color: Theme.of(
-                                    context,
-                                  ).colorScheme.onSurface.withOpacity(0.5),
-                                ),
-                          ),
-                          const Spacer(),
-                          Icon(
-                            provider.showArchived
-                                ? Icons.expand_less
-                                : Icons.expand_more,
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onSurface.withOpacity(0.5),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  if (provider.showArchived) ...[
-                    const SizedBox(height: 12),
-                    _buildNotebookGrid(provider.archivedNotebooks),
-                  ],
                 ],
 
                 // Bottom padding for FAB
@@ -777,11 +960,8 @@ class _HomeScreenState extends State<HomeScreen> {
               _navigateToNotebook(notebook);
             }
           },
+          onLongPressMenu: () => _showNotebookOptions(notebook),
         );
-      },
-      onDragStart: (index) {
-        _dragStartedIndex = index;
-        _wasReordered = false;
       },
       onReorder: (oldIndex, newIndex) {
         _wasReordered = true;

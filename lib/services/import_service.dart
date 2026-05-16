@@ -7,6 +7,7 @@ import 'package:path/path.dart' as p;
 import '../database/database_helper.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
+import '../models/folder.dart';
 
 class ImportService {
   final DatabaseHelper _db = DatabaseHelper();
@@ -66,10 +67,35 @@ class ImportService {
 
       // Import notebooks and entries
       final notebooksJson = jsonData['notebooks'] as List;
+      final foldersJson = jsonData['folders'] as List?;
+
+      // Import folders first
+      final folderIdMap = <String, String>{}; // old id -> new id
+      if (foldersJson != null) {
+        for (final folderJson in foldersJson) {
+          final folderData = folderJson as Map<String, dynamic>;
+          final folder = Folder.fromJson(folderData);
+
+          final exists = await _db.getFolder(folder.id) != null;
+          if (exists && merge) {
+            folderIdMap[folder.id] = folder.id;
+            continue;
+          }
+
+          await _db.insertFolder(folder);
+          folderIdMap[folder.id] = folder.id;
+        }
+      }
 
       for (final notebookJson in notebooksJson) {
         final notebookData = notebookJson as Map<String, dynamic>;
         final notebook = Notebook.fromJson(notebookData);
+
+        // Map folder_id if it exists
+        String? mappedFolderId = notebook.folderId;
+        if (mappedFolderId != null && folderIdMap.containsKey(mappedFolderId)) {
+          mappedFolderId = folderIdMap[mappedFolderId];
+        }
 
         // Check if notebook exists
         final exists = await _db.notebookExists(notebook.id);
@@ -82,8 +108,11 @@ class ImportService {
           await _db.permanentlyDeleteNotebook(notebook.id);
         }
 
-        // Insert notebook
-        await _db.insertNotebook(notebook);
+        // Insert notebook with mapped folder_id
+        final notebookToInsert = mappedFolderId != null
+            ? notebook.copyWith(folderId: mappedFolderId)
+            : notebook;
+        await _db.insertNotebook(notebookToInsert);
 
         // Import entries
         final entriesJson = notebookData['entries'] as List?;

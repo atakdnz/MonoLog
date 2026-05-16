@@ -10,14 +10,20 @@ class NotebooksProvider with ChangeNotifier {
   List<Notebook> _pinnedNotebooks = [];
   List<Notebook> _regularNotebooks = [];
   List<Notebook> _archivedNotebooks = [];
+  String? _folderId;
   bool _isLoading = false;
   bool _showArchived = false;
 
   List<Notebook> get pinnedNotebooks => _pinnedNotebooks;
   List<Notebook> get regularNotebooks => _regularNotebooks;
   List<Notebook> get archivedNotebooks => _archivedNotebooks;
+  String? get folderId => _folderId;
   bool get isLoading => _isLoading;
   bool get showArchived => _showArchived;
+
+  void setFolderId(String? folderId) {
+    _folderId = folderId;
+  }
 
   /// Toggle archived section visibility
   void toggleShowArchived() {
@@ -31,9 +37,9 @@ class NotebooksProvider with ChangeNotifier {
     notifyListeners();
 
     try {
-      _pinnedNotebooks = await _db.getPinnedNotebooks();
-      _regularNotebooks = await _db.getRegularNotebooks();
-      _archivedNotebooks = await _db.getArchivedNotebooks();
+      _pinnedNotebooks = await _db.getPinnedNotebooks(folderId: _folderId);
+      _regularNotebooks = await _db.getRegularNotebooks(folderId: _folderId);
+      _archivedNotebooks = await _db.getArchivedNotebooks(folderId: _folderId);
     } catch (e) {
       debugPrint('Error loading notebooks: $e');
     }
@@ -112,9 +118,9 @@ class NotebooksProvider with ChangeNotifier {
     await Future.wait(futures);
     
     // Reload fully in background to sync
-    _pinnedNotebooks = await _db.getPinnedNotebooks();
-    _regularNotebooks = await _db.getRegularNotebooks();
-    _archivedNotebooks = await _db.getArchivedNotebooks();
+    _pinnedNotebooks = await _db.getPinnedNotebooks(folderId: _folderId);
+    _regularNotebooks = await _db.getRegularNotebooks(folderId: _folderId);
+    _archivedNotebooks = await _db.getArchivedNotebooks(folderId: _folderId);
     notifyListeners();
   }
 }

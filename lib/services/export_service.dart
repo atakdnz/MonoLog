@@ -18,7 +18,8 @@ class ExportService {
   Future<String?> exportAllData() async {
     try {
       final data = await _db.getAllDataForExport();
-      return await _createExportZip(data);
+      final folders = await _db.getFoldersForExport();
+      return await _createExportZip(data, folders: folders);
     } catch (e) {
       debugPrint('Export failed: $e');
       return null;
@@ -46,8 +47,9 @@ class ExportService {
   }
 
   Future<String?> _createExportZip(
-    List<Map<String, dynamic>> notebooksData,
-  ) async {
+    List<Map<String, dynamic>> notebooksData, {
+    List<Map<String, dynamic>>? folders,
+  }) async {
     try {
       final archive = Archive();
       final imagesToInclude =
@@ -126,6 +128,7 @@ class ExportService {
       final jsonData = {
         'app_version': appVersion,
         'export_date': DateTime.now().toIso8601String(),
+        'folders': folders ?? [],
         'notebooks': notebooks,
       };
 

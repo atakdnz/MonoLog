@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
+import '../models/folder.dart';
 import '../utils/constants.dart';
 
 class DatabaseHelper {
@@ -25,13 +26,23 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 5,
+      version: 6,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
   }
 
   Future<void> _onCreate(Database db, int version) async {
+    await db.execute('''
+      CREATE TABLE folders (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        sort_order INTEGER DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )
+    ''');
+
     await db.execute('''
       CREATE TABLE notebooks (
         id TEXT PRIMARY KEY,
@@ -42,9 +53,11 @@ class DatabaseHelper {
         is_deleted INTEGER DEFAULT 0,
         entry_style TEXT DEFAULT 'chat',
         sort_order INTEGER DEFAULT 0,
+        folder_id TEXT,
         deleted_at TEXT,
         created_at TEXT NOT NULL,
-        updated_at TEXT NOT NULL
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY (folder_id) REFERENCES folders(id) ON DELETE SET NULL
       )
     ''');
 
@@ -108,6 +121,20 @@ class DatabaseHelper {
     if (oldVersion < 5) {
       await db.execute(
         'ALTER TABLE notebooks ADD COLUMN sort_order INTEGER DEFAULT 0',
+      );
+    }
+    if (oldVersion < 6) {
+      await db.execute('''
+        CREATE TABLE folders (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          sort_order INTEGER DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        )
+      ''');
+      await db.execute(
+        'ALTER TABLE notebooks ADD COLUMN folder_id TEXT',
       );
     }
   }
@@ -187,46 +214,66 @@ class DatabaseHelper {
   }
 
   /// Get all notebooks (excluding archived and deleted)
-  Future<List<Notebook>> getNotebooks({bool includeArchived = false}) async {
+  Future<List<Notebook>> getNotebooks({bool includeArchived = false, String? folderId}) async {
     final db = await database;
+    String where = includeArchived
+        ? 'is_deleted = 0'
+        : 'is_archived = 0 AND is_deleted = 0';
+    if (folderId != null) {
+      where += ' AND folder_id = ?';
+    }
     final maps = await db.query(
       'notebooks',
-      where: includeArchived
-          ? 'is_deleted = 0'
-          : 'is_archived = 0 AND is_deleted = 0',
+      where: where,
+      whereArgs: folderId != null ? [folderId] : [],
       orderBy: 'is_pinned DESC, sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
 
   /// Get pinned notebooks
-  Future<List<Notebook>> getPinnedNotebooks() async {
+  Future<List<Notebook>> getPinnedNotebooks({String? folderId}) async {
     final db = await database;
+    String where = 'is_pinned = 1 AND is_archived = 0 AND is_deleted = 0';
+    if (folderId != null) {
+      where += ' AND folder_id = ?';
+    }
     final maps = await db.query(
       'notebooks',
-      where: 'is_pinned = 1 AND is_archived = 0 AND is_deleted = 0',
+      where: where,
+      whereArgs: folderId != null ? [folderId] : [],
       orderBy: 'sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
 
   /// Get regular (non-pinned, non-archived, non-deleted) notebooks
-  Future<List<Notebook>> getRegularNotebooks() async {
+  Future<List<Notebook>> getRegularNotebooks({String? folderId}) async {
     final db = await database;
+    String where = 'is_pinned = 0 AND is_archived = 0 AND is_deleted = 0';
+    if (folderId != null) {
+      where += ' AND folder_id = ?';
+    }
     final maps = await db.query(
       'notebooks',
-      where: 'is_pinned = 0 AND is_archived = 0 AND is_deleted = 0',
+      where: where,
+      whereArgs: folderId != null ? [folderId] : [],
       orderBy: 'sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
 
   /// Get archived notebooks
-  Future<List<Notebook>> getArchivedNotebooks() async {
+  Future<List<Notebook>> getArchivedNotebooks({String? folderId}) async {
     final db = await database;
+    String where = 'is_archived = 1 AND is_deleted = 0';
+    if (folderId != null) {
+      where += ' AND folder_id = ?';
+    }
     final maps = await db.query(
       'notebooks',
-      where: 'is_archived = 1 AND is_deleted = 0',
+      where: where,
+      whereArgs: folderId != null ? [folderId] : [],
       orderBy: 'sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
@@ -270,6 +317,135 @@ class DatabaseHelper {
     ''',
       [DateTime.now().toIso8601String(), id],
     );
+  }
+
+  /// Move notebook to a folder
+  Future<void> moveNotebookToFolder(String notebookId, String? folderId) async {
+    final db = await database;
+    await db.rawUpdate(
+      '''
+      UPDATE notebooks 
+      SET folder_id = ?, updated_at = ?
+      WHERE id = ?
+    ''',
+      [folderId, DateTime.now().toIso8601String(), notebookId],
+    );
+  }
+
+  // =========== FOLDER OPERATIONS ===========
+
+  /// Insert a new folder
+  Future<void> insertFolder(Folder folder) async {
+    final db = await database;
+    await db.insert('folders', folder.toMap());
+  }
+
+  /// Update an existing folder
+  Future<void> updateFolder(Folder folder) async {
+    final db = await database;
+    await db.update(
+      'folders',
+      folder.copyWith(updatedAt: DateTime.now()).toMap(),
+      where: 'id = ?',
+      whereArgs: [folder.id],
+    );
+  }
+
+  /// Update just the sort order of a folder
+  Future<void> updateFolderSortOrder(String id, int sortOrder) async {
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE folders SET sort_order = ? WHERE id = ?',
+      [sortOrder, id],
+    );
+  }
+
+  /// Delete a folder (notebooks in it will have folder_id set to NULL)
+  Future<void> deleteFolder(String id) async {
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE notebooks SET folder_id = NULL WHERE folder_id = ?',
+      [id],
+    );
+    await db.delete('folders', where: 'id = ?', whereArgs: [id]);
+  }
+
+  /// Get a folder by ID
+  Future<Folder?> getFolder(String id) async {
+    final db = await database;
+    final maps = await db.query('folders', where: 'id = ?', whereArgs: [id]);
+    if (maps.isEmpty) return null;
+    return Folder.fromMap(maps.first);
+  }
+
+  /// Get all folders
+  Future<List<Folder>> getFolders() async {
+    final db = await database;
+    final maps = await db.query(
+      'folders',
+      orderBy: 'sort_order ASC, created_at ASC',
+    );
+    return maps.map((map) => Folder.fromMap(map)).toList();
+  }
+
+  /// Get notebooks in a folder (excluding archived and deleted)
+  Future<List<Notebook>> getNotebooksInFolder(String folderId) async {
+    final db = await database;
+    final maps = await db.query(
+      'notebooks',
+      where: 'folder_id = ? AND is_archived = 0 AND is_deleted = 0',
+      whereArgs: [folderId],
+      orderBy: 'is_pinned DESC, sort_order ASC, updated_at DESC',
+    );
+    return maps.map((map) => Notebook.fromMap(map)).toList();
+  }
+
+  /// Get pinned notebooks in a folder
+  Future<List<Notebook>> getPinnedNotebooksInFolder(String folderId) async {
+    final db = await database;
+    final maps = await db.query(
+      'notebooks',
+      where:
+          'folder_id = ? AND is_pinned = 1 AND is_archived = 0 AND is_deleted = 0',
+      whereArgs: [folderId],
+      orderBy: 'sort_order ASC, updated_at DESC',
+    );
+    return maps.map((map) => Notebook.fromMap(map)).toList();
+  }
+
+  /// Get regular (non-pinned) notebooks in a folder
+  Future<List<Notebook>> getRegularNotebooksInFolder(String folderId) async {
+    final db = await database;
+    final maps = await db.query(
+      'notebooks',
+      where:
+          'folder_id = ? AND is_pinned = 0 AND is_archived = 0 AND is_deleted = 0',
+      whereArgs: [folderId],
+      orderBy: 'sort_order ASC, updated_at DESC',
+    );
+    return maps.map((map) => Notebook.fromMap(map)).toList();
+  }
+
+  /// Get archived notebooks in a folder
+  Future<List<Notebook>> getArchivedNotebooksInFolder(String folderId) async {
+    final db = await database;
+    final maps = await db.query(
+      'notebooks',
+      where: 'folder_id = ? AND is_archived = 1 AND is_deleted = 0',
+      whereArgs: [folderId],
+      orderBy: 'sort_order ASC, updated_at DESC',
+    );
+    return maps.map((map) => Notebook.fromMap(map)).toList();
+  }
+
+  /// Get count of notebooks in a folder
+  Future<int> getNotebookCountInFolder(String folderId) async {
+    final db = await database;
+    final result = await db.rawQuery(
+      'SELECT COUNT(*) as count FROM notebooks WHERE folder_id = ? AND is_archived = 0 AND is_deleted = 0',
+      [folderId],
+    );
+    return result.first['count'] as int;
   }
 
   // =========== ENTRY OPERATIONS ===========
@@ -547,6 +723,12 @@ class DatabaseHelper {
       result.add({...notebook, 'entries': entries});
     }
     return result;
+  }
+
+  /// Get all folders for export
+  Future<List<Map<String, dynamic>>> getFoldersForExport() async {
+    final db = await database;
+    return await db.query('folders', orderBy: 'sort_order ASC');
   }
 
   /// Get a single notebook with all entries for export

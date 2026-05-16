@@ -10,6 +10,7 @@ class Notebook {
   final bool isDeleted;
   final String entryStyle;
   final int sortOrder;
+  final String? folderId;
   final DateTime? deletedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -23,6 +24,7 @@ class Notebook {
     this.isDeleted = false,
     this.entryStyle = NotebookEntryStyles.chat,
     this.sortOrder = 0,
+    this.folderId,
     this.deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -40,6 +42,8 @@ class Notebook {
     bool? isDeleted,
     String? entryStyle,
     int? sortOrder,
+    String? folderId,
+    bool clearFolderId = false,
     DateTime? deletedAt,
     bool clearDeletedAt = false,
     DateTime? createdAt,
@@ -54,6 +58,7 @@ class Notebook {
       isDeleted: isDeleted ?? this.isDeleted,
       entryStyle: entryStyle ?? this.entryStyle,
       sortOrder: sortOrder ?? this.sortOrder,
+      folderId: clearFolderId ? null : (folderId ?? this.folderId),
       deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -71,6 +76,7 @@ class Notebook {
       isDeleted: (map['is_deleted'] as int?) == 1,
       entryStyle: map['entry_style'] as String? ?? NotebookEntryStyles.chat,
       sortOrder: map['sort_order'] as int? ?? 0,
+      folderId: map['folder_id'] as String?,
       deletedAt: map['deleted_at'] != null
           ? DateTime.parse(map['deleted_at'] as String)
           : null,
@@ -90,6 +96,7 @@ class Notebook {
       'is_deleted': isDeleted ? 1 : 0,
       'entry_style': entryStyle,
       'sort_order': sortOrder,
+      'folder_id': folderId,
       'deleted_at': deletedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -107,6 +114,7 @@ class Notebook {
       isDeleted: json['is_deleted'] as bool? ?? false,
       entryStyle: json['entry_style'] as String? ?? NotebookEntryStyles.chat,
       sortOrder: json['sort_order'] as int? ?? 0,
+      folderId: json['folder_id'] as String?,
       deletedAt: json['deleted_at'] != null
           ? DateTime.parse(json['deleted_at'] as String)
           : null,
@@ -117,7 +125,6 @@ class Notebook {
     );
   }
 
-  /// Convert to JSON (for import/export)
   Map<String, dynamic> toJson() {
     return {
       'id': id,
@@ -128,6 +135,7 @@ class Notebook {
       'is_deleted': isDeleted,
       'entry_style': entryStyle,
       'sort_order': sortOrder,
+      'folder_id': folderId,
       'deleted_at': deletedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };

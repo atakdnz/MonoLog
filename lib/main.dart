@@ -9,6 +9,7 @@ import 'providers/trash_provider.dart';
 import 'providers/search_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/app_lock_provider.dart';
+import 'providers/folders_provider.dart';
 import 'screens/app_lock_screen.dart';
 import 'screens/home_screen.dart';
 import 'utils/constants.dart';
@@ -33,6 +34,7 @@ class MonoLogApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => FoldersProvider()),
         ChangeNotifierProvider(create: (_) => NotebooksProvider()),
         ChangeNotifierProvider(create: (_) => EntriesProvider()),
         ChangeNotifierProvider(create: (_) => TrashProvider()),

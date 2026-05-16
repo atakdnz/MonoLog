@@ -21,6 +21,7 @@ A journal-style note-taking app for Android built with Flutter. MonoLog is desig
 - Light and dark themes
 - Optional app lock with biometrics or device passcode
 - Per-notebook lock with biometric authentication
+- Notebook info with entry count, character/word count, image count, and date range
 
 ## Requirements
 

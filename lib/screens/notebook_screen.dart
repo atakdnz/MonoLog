@@ -826,6 +826,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
               PopupMenuButton<String>(
                 onSelected: (value) async {
                   switch (value) {
+                    case 'info':
+                      _showNotebookInfo();
+                      break;
                     case 'edit':
                       _showEditNotebookDialog();
                       break;
@@ -856,6 +859,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'info',
+                    child: Text('Notebook Info'),
+                  ),
                   const PopupMenuItem(
                     value: 'edit',
                     child: Text('Edit Notebook'),
@@ -1156,6 +1163,119 @@ class _NotebookScreenState extends State<NotebookScreen> {
         const SnackBar(content: Text('Import failed or cancelled')),
       );
     }
+  }
+
+  void _showNotebookInfo() {
+    final provider = context.read<EntriesProvider>();
+    final entries = provider.entries;
+    final isChat = _notebook.entryStyle == NotebookEntryStyles.chat;
+
+    int totalChars = 0;
+    int totalWords = 0;
+    int imageCount = 0;
+    int starredCount = 0;
+
+    for (final entry in entries) {
+      if (entry.hasContent) {
+        totalChars += entry.content!.length;
+        totalWords += entry.content!.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+      }
+      if (entry.hasImage) imageCount++;
+      if (entry.isStarred) starredCount++;
+    }
+
+    DateTime? firstEntryDate;
+    DateTime? lastEntryDate;
+    if (entries.isNotEmpty) {
+      firstEntryDate = entries.last.displayTime;
+      lastEntryDate = entries.first.displayTime;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 16),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              Text(
+                _notebook.title,
+                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                isChat ? 'Chat Notebook' : 'Classic Notebook',
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                ),
+              ),
+              const SizedBox(height: 20),
+              const Divider(),
+              const SizedBox(height: 8),
+              _buildInfoRow(Icons.format_list_bulleted, isChat ? 'Messages' : 'Entries', '${entries.length}'),
+              _buildInfoRow(Icons.text_fields, 'Characters', totalChars.toString()),
+              _buildInfoRow(Icons.text_snippet, 'Words', totalWords.toString()),
+              if (imageCount > 0)
+                _buildInfoRow(Icons.image, 'Images', imageCount.toString()),
+              if (starredCount > 0)
+                _buildInfoRow(Icons.star, 'Starred', starredCount.toString()),
+              if (firstEntryDate != null) ...[
+                const SizedBox(height: 4),
+                const Divider(),
+                const SizedBox(height: 4),
+                _buildInfoRow(Icons.event_note, 'First entry', TimeUtils.getShortDate(firstEntryDate)),
+                _buildInfoRow(Icons.event, 'Last entry', TimeUtils.getShortDate(lastEntryDate!)),
+              ],
+              const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6),
+      child: Row(
+        children: [
+          Icon(icon, size: 20, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+          const SizedBox(width: 12),
+          Text(
+            label,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+            ),
+          ),
+          const Spacer(),
+          Text(
+            value,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showEditNotebookDialog() {

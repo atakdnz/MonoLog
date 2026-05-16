@@ -598,7 +598,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     setState(() => _searchResults = results);
   }
 
-  void _showFullScreenImage(String imagePath) {
+  void _showFullScreenImage(Entry entry) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -607,9 +607,19 @@ class _NotebookScreenState extends State<NotebookScreen> {
           appBar: AppBar(
             backgroundColor: Colors.black,
             iconTheme: const IconThemeData(color: Colors.white),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.draw_outlined, color: Colors.white),
+                tooltip: 'Edit drawing',
+                onPressed: () {
+                  Navigator.pop(context);
+                  _annotateEntryImage(entry);
+                },
+              ),
+            ],
           ),
           body: Center(
-            child: InteractiveViewer(child: Image.file(File(imagePath))),
+            child: InteractiveViewer(child: Image.file(File(entry.imagePath!))),
           ),
         ),
       ),
@@ -1013,7 +1023,16 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 if (_isSelectingEntries) {
                   _toggleEntrySelection(entry);
                 } else {
-                  _showFullScreenImage(entry.imagePath!);
+                  _showFullScreenImage(entry);
+                }
+              }
+            : null,
+        onImageLongPress: entry.hasImage
+            ? () {
+                if (_isSelectingEntries) {
+                  _toggleEntrySelection(entry);
+                } else {
+                  _showEntryOptions(entry);
                 }
               }
             : null,

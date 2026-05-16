@@ -9,6 +9,7 @@ class EntryBubble extends StatelessWidget {
   final VoidCallback? onTap;
   final VoidCallback? onLongPress;
   final VoidCallback? onImageTap;
+  final VoidCallback? onImageLongPress;
   final Color? notebookColor;
   final bool isSelected;
 
@@ -19,6 +20,7 @@ class EntryBubble extends StatelessWidget {
     this.onTap,
     this.onLongPress,
     this.onImageTap,
+    this.onImageLongPress,
     this.notebookColor,
     this.isSelected = false,
   });
@@ -115,6 +117,7 @@ class EntryBubble extends StatelessWidget {
                     if (entry.hasContent) const SizedBox(height: 10),
                     GestureDetector(
                       onTap: onImageTap,
+                      onLongPress: onImageLongPress,
                       child: Stack(
                         children: [
                           ClipRRect(

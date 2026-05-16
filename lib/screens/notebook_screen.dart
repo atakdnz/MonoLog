@@ -17,9 +17,8 @@ import '../widgets/date_header.dart';
 import '../widgets/input_bar.dart';
 import 'image_annotation_screen.dart';
 import '../services/annotation_metadata_service.dart';
-import '../services/export_service.dart';
-import '../services/import_service.dart';
 import 'entry_edit_screen.dart';
+import 'notebook_details_screen.dart';
 
 enum _ClassicInlineFormat { bold, italic, code }
 
@@ -47,6 +46,8 @@ class _NotebookScreenState extends State<NotebookScreen> {
   bool _showStarredOnly = false;
   final _searchController = TextEditingController();
   List<Entry> _searchResults = [];
+  int _classicSearchCurrentMatch = 0;
+  List<TextRange> _classicSearchMatches = [];
   Timer? _classicSaveDebounce;
   String? _classicEntryId;
   bool _isApplyingClassicText = false;
@@ -128,6 +129,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
       setState(() {});
     });
     _classicController.reflowInlineFormats(_lastClassicSnapshot.text);
+    if (_isSearching && _notebook.entryStyle == NotebookEntryStyles.classic) {
+      _updateClassicSearchMatches(_searchController.text);
+    }
     _classicRedoStack.clear();
     _lastClassicSnapshot = _classicController.snapshot();
     if (mounted) setState(() {});
@@ -745,11 +749,19 @@ class _NotebookScreenState extends State<NotebookScreen> {
       if (!_isSearching) {
         _searchController.clear();
         _searchResults = [];
+        _clearClassicSearchMatches();
+      } else if (_notebook.entryStyle == NotebookEntryStyles.classic) {
+        _updateClassicSearchMatches(_searchController.text);
       }
     });
   }
 
   Future<void> _performSearch(String query) async {
+    if (_notebook.entryStyle == NotebookEntryStyles.classic) {
+      setState(() => _updateClassicSearchMatches(query));
+      return;
+    }
+
     if (query.isEmpty) {
       setState(() => _searchResults = []);
       return;
@@ -757,6 +769,82 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
     final results = await context.read<EntriesProvider>().searchEntries(query);
     setState(() => _searchResults = results);
+  }
+
+  void _clearClassicSearchMatches() {
+    _classicSearchMatches = [];
+    _classicSearchCurrentMatch = 0;
+    _classicController.highlightedRanges = [];
+  }
+
+  void _updateClassicSearchMatches(String query) {
+    final text = _classicController.text;
+    final trimmedQuery = query.trim();
+    if (trimmedQuery.isEmpty || text.isEmpty) {
+      _clearClassicSearchMatches();
+      return;
+    }
+
+    final matches = <TextRange>[];
+    final lowerText = text.toLowerCase();
+    final lowerQuery = trimmedQuery.toLowerCase();
+    var start = 0;
+    while (start < lowerText.length) {
+      final index = lowerText.indexOf(lowerQuery, start);
+      if (index == -1) break;
+      matches.add(TextRange(start: index, end: index + lowerQuery.length));
+      start = index + lowerQuery.length;
+    }
+
+    _classicSearchMatches = matches;
+    if (matches.isEmpty) {
+      _classicSearchCurrentMatch = 0;
+    } else {
+      _classicSearchCurrentMatch = _classicSearchCurrentMatch.clamp(
+        0,
+        matches.length - 1,
+      );
+    }
+    _classicController.highlightedRanges = matches;
+  }
+
+  void _goToClassicSearchMatch(int direction) {
+    if (_classicSearchMatches.isEmpty) return;
+    setState(() {
+      _classicSearchCurrentMatch =
+          (_classicSearchCurrentMatch + direction) %
+          _classicSearchMatches.length;
+      if (_classicSearchCurrentMatch < 0) {
+        _classicSearchCurrentMatch = _classicSearchMatches.length - 1;
+      }
+    });
+
+    final range = _classicSearchMatches[_classicSearchCurrentMatch];
+    _classicController.selection = TextSelection(
+      baseOffset: range.start,
+      extentOffset: range.end,
+    );
+  }
+
+  Future<void> _openNotebookDetails() async {
+    final result = await Navigator.push<String>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => NotebookDetailsScreen(notebook: _notebook),
+      ),
+    );
+    if (!mounted) return;
+
+    final updated = await context.read<NotebooksProvider>().getNotebook(
+      _notebook.id,
+    );
+    if (updated != null && mounted) {
+      setState(() => _notebook = updated);
+    }
+
+    if (result != null && mounted) {
+      _scrollToEntry(result);
+    }
   }
 
   void _showFullScreenImage(Entry entry) {
@@ -798,20 +886,28 @@ class _NotebookScreenState extends State<NotebookScreen> {
     )!;
 
     return PopScope(
-      canPop: !_isSelectingEntries,
+      canPop: !_isSelectingEntries && !_isSearching,
       onPopInvokedWithResult: (didPop, result) {
         if (!didPop && _isSelectingEntries) {
           _clearEntrySelection();
+        } else if (!didPop && _isSearching) {
+          _toggleSearch();
         }
       },
       child: Scaffold(
         appBar: AppBar(
-          centerTitle: false,
+          centerTitle: !_isSearching,
           leading: _isSelectingEntries
               ? IconButton(
                   icon: const Icon(Icons.close),
                   tooltip: 'Clear selection',
                   onPressed: _clearEntrySelection,
+                )
+              : _isSearching
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Close search',
+                  onPressed: _toggleSearch,
                 )
               : null,
           title: _isSelectingEntries
@@ -823,15 +919,42 @@ class _NotebookScreenState extends State<NotebookScreen> {
               ? TextField(
                   controller: _searchController,
                   autofocus: true,
-                  decoration: const InputDecoration(
+                  decoration: InputDecoration(
                     hintText: 'Search in notebook...',
-                    border: InputBorder.none,
+                    filled: true,
+                    fillColor: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(14),
+                      borderSide: BorderSide.none,
+                    ),
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 10,
+                    ),
                   ),
                   onChanged: _performSearch,
                 )
-              : Text(
-                  _notebook.title,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+              : InkWell(
+                  onTap: _openNotebookDetails,
+                  borderRadius: BorderRadius.circular(14),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(minWidth: 156),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      child: Text(
+                        _notebook.title,
+                        textAlign: TextAlign.center,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
                 ),
           actions: [
             if (_isSelectingEntries)
@@ -920,72 +1043,80 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   );
                 },
               )
-            else if (_notebook.entryStyle == NotebookEntryStyles.chat)
-              IconButton(
-                icon: Icon(_isSearching ? Icons.close : Icons.search),
-                onPressed: _toggleSearch,
-              ),
+            else if (_isSearching)
+              if (_notebook.entryStyle == NotebookEntryStyles.classic)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _classicSearchMatches.isEmpty
+                          ? '0/0'
+                          : '${_classicSearchCurrentMatch + 1}/${_classicSearchMatches.length}',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_up),
+                      tooltip: 'Previous match',
+                      onPressed: _classicSearchMatches.isEmpty
+                          ? null
+                          : () => _goToClassicSearchMatch(-1),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.keyboard_arrow_down),
+                      tooltip: 'Next match',
+                      onPressed: _classicSearchMatches.isEmpty
+                          ? null
+                          : () => _goToClassicSearchMatch(1),
+                    ),
+                  ],
+                )
+              else
+                const SizedBox.shrink(),
             if (!_isSearching && !_isSelectingEntries) ...[
-              if (_notebook.entryStyle == NotebookEntryStyles.chat) ...[
-                IconButton(
-                  icon: Icon(
-                    _showStarredOnly ? Icons.star : Icons.star_border,
-                    color: _showStarredOnly ? Colors.amber[600] : null,
-                  ),
-                  onPressed: () =>
-                      setState(() => _showStarredOnly = !_showStarredOnly),
-                  tooltip: _showStarredOnly ? 'Show all' : 'Show starred only',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.calendar_today),
-                  onPressed: _showJumpToDatePicker,
-                ),
-              ],
               PopupMenuButton<String>(
                 onSelected: (value) async {
                   switch (value) {
+                    case 'search':
+                      _toggleSearch();
+                      break;
+                    case 'starred':
+                      setState(() => _showStarredOnly = !_showStarredOnly);
+                      break;
+                    case 'goToDate':
+                      _showJumpToDatePicker();
+                      break;
                     case 'formatting':
                       setState(() {
                         _showClassicFormattingBar = !_showClassicFormattingBar;
                       });
                       break;
-                    case 'info':
-                      _showNotebookInfo();
-                      break;
                     case 'edit':
                       _showEditNotebookDialog();
                       break;
-                    case 'export':
-                      _exportNotebook();
-                      break;
-                    case 'import':
-                      _importIntoNotebook();
-                      break;
                     case 'archive':
+                      final navigator = Navigator.of(context);
                       await context.read<NotebooksProvider>().toggleArchive(
                         _notebook.id,
                       );
-                      if (mounted) Navigator.pop(context);
-                      break;
-                    case 'lock':
-                      await context.read<NotebooksProvider>().toggleLock(
-                        _notebook.id,
-                      );
-                      if (mounted) {
-                        final updated = await context
-                            .read<NotebooksProvider>()
-                            .getNotebook(_notebook.id);
-                        if (updated != null) {
-                          setState(() => _notebook = updated);
-                        }
-                      }
-                      break;
-                    case 'delete':
-                      _showDeleteConfirmation();
+                      if (mounted) navigator.pop();
                       break;
                   }
                 },
                 itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'search', child: Text('Search')),
+                  if (_notebook.entryStyle == NotebookEntryStyles.chat)
+                    PopupMenuItem(
+                      value: 'starred',
+                      child: Text(
+                        _showStarredOnly
+                            ? 'Show All Entries'
+                            : 'Starred Entries',
+                      ),
+                    ),
+                  if (_notebook.entryStyle == NotebookEntryStyles.chat)
+                    const PopupMenuItem(
+                      value: 'goToDate',
+                      child: Text('Go to Date'),
+                    ),
                   if (_notebook.entryStyle == NotebookEntryStyles.classic)
                     PopupMenuItem(
                       value: 'formatting',
@@ -1006,50 +1137,13 @@ class _NotebookScreenState extends State<NotebookScreen> {
                         ],
                       ),
                     ),
-                  const PopupMenuItem(
-                    value: 'info',
-                    child: Text('Notebook Info'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'edit',
-                    child: Text('Edit Notebook'),
-                  ),
-                  const PopupMenuItem(
-                    value: 'export',
-                    child: Text('Export Notebook'),
-                  ),
-                  if (_notebook.entryStyle == NotebookEntryStyles.chat)
-                    const PopupMenuItem(
-                      value: 'import',
-                      child: Text('Import and Merge'),
-                    ),
                   PopupMenuItem(
                     value: 'archive',
                     child: Text(_notebook.isArchived ? 'Unarchive' : 'Archive'),
                   ),
-                  PopupMenuItem(
-                    value: 'lock',
-                    child: Row(
-                      children: [
-                        Icon(
-                          _notebook.isLocked
-                              ? Icons.lock_open
-                              : Icons.lock_outline,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 12),
-                        Text(_notebook.isLocked ? 'Remove Lock' : 'Add Lock'),
-                      ],
-                    ),
-                  ),
-                  PopupMenuItem(
-                    value: 'delete',
-                    child: Text(
-                      'Delete',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.error,
-                      ),
-                    ),
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Text('Edit Notebook'),
                   ),
                 ],
               ),
@@ -1405,187 +1499,6 @@ class _NotebookScreenState extends State<NotebookScreen> {
     );
   }
 
-  Future<void> _exportNotebook() async {
-    final exportService = ExportService();
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Exporting notebook...')));
-
-    final filePath = await exportService.exportNotebook(_notebook.id);
-
-    if (filePath != null && mounted) {
-      await exportService.shareExport(filePath);
-    } else if (mounted) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Export failed')));
-    }
-  }
-
-  Future<void> _importIntoNotebook() async {
-    final importService = ImportService();
-
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(const SnackBar(content: Text('Importing entries...')));
-
-    final success = await importService.importMergeIntoNotebook(_notebook.id);
-
-    if (success && mounted) {
-      // Reload entries
-      await context.read<EntriesProvider>().loadEntries();
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entries imported successfully')),
-      );
-    } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Import failed or cancelled')),
-      );
-    }
-  }
-
-  void _showNotebookInfo() {
-    final provider = context.read<EntriesProvider>();
-    final entries = provider.entries;
-    final isChat = _notebook.entryStyle == NotebookEntryStyles.chat;
-
-    int totalChars = 0;
-    int totalWords = 0;
-    int imageCount = 0;
-    int starredCount = 0;
-
-    for (final entry in entries) {
-      if (entry.hasContent) {
-        totalChars += entry.content!.length;
-        totalWords += entry.content!
-            .trim()
-            .split(RegExp(r'\s+'))
-            .where((w) => w.isNotEmpty)
-            .length;
-      }
-      if (entry.hasImage) imageCount++;
-      if (entry.isStarred) starredCount++;
-    }
-
-    DateTime? firstEntryDate;
-    DateTime? lastEntryDate;
-    if (entries.isNotEmpty) {
-      firstEntryDate = entries.last.displayTime;
-      lastEntryDate = entries.first.displayTime;
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 4,
-                  margin: const EdgeInsets.only(bottom: 16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(
-                      context,
-                    ).colorScheme.onSurface.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-              ),
-              Text(
-                _notebook.title,
-                style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                isChat ? 'Chat Notebook' : 'Classic Notebook',
-                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(
-                    context,
-                  ).colorScheme.onSurface.withOpacity(0.5),
-                ),
-              ),
-              const SizedBox(height: 20),
-              const Divider(),
-              const SizedBox(height: 8),
-              _buildInfoRow(
-                Icons.format_list_bulleted,
-                isChat ? 'Messages' : 'Entries',
-                '${entries.length}',
-              ),
-              _buildInfoRow(
-                Icons.text_fields,
-                'Characters',
-                totalChars.toString(),
-              ),
-              _buildInfoRow(Icons.text_snippet, 'Words', totalWords.toString()),
-              if (imageCount > 0)
-                _buildInfoRow(Icons.image, 'Images', imageCount.toString()),
-              if (starredCount > 0)
-                _buildInfoRow(Icons.star, 'Starred', starredCount.toString()),
-              if (firstEntryDate != null) ...[
-                const SizedBox(height: 4),
-                const Divider(),
-                const SizedBox(height: 4),
-                _buildInfoRow(
-                  Icons.event_note,
-                  'First entry',
-                  TimeUtils.getShortDate(firstEntryDate),
-                ),
-                _buildInfoRow(
-                  Icons.event,
-                  'Last entry',
-                  TimeUtils.getShortDate(lastEntryDate!),
-                ),
-              ],
-              const SizedBox(height: 16),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildInfoRow(IconData icon, String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Icon(
-            icon,
-            size: 20,
-            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-          ),
-          const SizedBox(width: 12),
-          Text(
-            label,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
-            ),
-          ),
-          const Spacer(),
-          Text(
-            value,
-            style: Theme.of(
-              context,
-            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
-          ),
-        ],
-      ),
-    );
-  }
-
   void _showEditNotebookDialog() {
     final titleController = TextEditingController(text: _notebook.title);
     String selectedColor = _notebook.color;
@@ -1729,37 +1642,6 @@ class _NotebookScreenState extends State<NotebookScreen> {
       ),
     );
   }
-
-  void _showDeleteConfirmation() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Notebook?'),
-        content: Text(
-          'This will permanently delete "${_notebook.title}" and all its entries. This action cannot be undone.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () async {
-              Navigator.pop(context);
-              await context.read<NotebooksProvider>().deleteNotebook(
-                _notebook.id,
-              );
-              if (mounted) Navigator.pop(context);
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class _SavedImage {
@@ -1862,6 +1744,7 @@ class _ClassicEditorSnapshot {
 class _ClassicRichTextController extends TextEditingController {
   List<_ClassicStyleRange> inlineStyles = [];
   List<_ClassicLineStyle> lineStyles = [];
+  List<TextRange> highlightedRanges = [];
   final Set<_ClassicInlineFormat> activeInlineFormats = {};
   _ClassicLineFormat? activeLineFormat;
 
@@ -2114,11 +1997,19 @@ class _ClassicRichTextController extends TextEditingController {
           .where((range) => i >= range.start && i < range.end)
           .map((range) => range.format)
           .toSet();
+      final isHighlighted = highlightedRanges.any(
+        (range) => i >= range.start && i < range.end,
+      );
       final next = _nextStyleBoundary(i, textValue.length);
       spans.add(
         TextSpan(
           text: textValue.substring(i, next),
-          style: _styleFor(baseStyle, lineStyle?.format, activeInlineStyles),
+          style: _styleFor(
+            baseStyle,
+            lineStyle?.format,
+            activeInlineStyles,
+            isHighlighted,
+          ),
         ),
       );
       i = next - 1;
@@ -2136,6 +2027,10 @@ class _ClassicRichTextController extends TextEditingController {
       if (range.start > offset && range.start < next) next = range.start;
       if (range.end > offset && range.end < next) next = range.end;
     }
+    for (final range in highlightedRanges) {
+      if (range.start > offset && range.start < next) next = range.start;
+      if (range.end > offset && range.end < next) next = range.end;
+    }
     return next;
   }
 
@@ -2143,6 +2038,7 @@ class _ClassicRichTextController extends TextEditingController {
     TextStyle baseStyle,
     _ClassicLineFormat? lineFormat,
     Set<_ClassicInlineFormat> inlineFormats,
+    bool isHighlighted,
   ) {
     var result = baseStyle;
     if (lineFormat == _ClassicLineFormat.heading) {
@@ -2168,6 +2064,11 @@ class _ClassicRichTextController extends TextEditingController {
       result = result.copyWith(
         fontFamily: 'monospace',
         backgroundColor: (result.color ?? Colors.black).withValues(alpha: 0.08),
+      );
+    }
+    if (isHighlighted) {
+      result = result.copyWith(
+        backgroundColor: Colors.amber.withValues(alpha: 0.45),
       );
     }
     return result;

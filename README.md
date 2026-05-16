@@ -7,6 +7,8 @@ A journal-style note-taking app for Android built with Flutter. MonoLog is desig
 ## Features
 
 - Messaging-style entry input
+- Chat and classic notebook styles
+- Classic notebook rich-text editing with Markdown-compatible storage
 - Folder organization for notebooks with sidebar navigation
 - Color-coded notebooks
 - Time-based entry grouping and date headers

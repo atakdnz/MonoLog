@@ -21,6 +21,10 @@ import '../services/export_service.dart';
 import '../services/import_service.dart';
 import 'entry_edit_screen.dart';
 
+enum _ClassicInlineFormat { bold, italic, code }
+
+enum _ClassicLineFormat { heading, bullet, quote }
+
 class NotebookScreen extends StatefulWidget {
   final Notebook notebook;
   final String? initialEntryId;
@@ -37,7 +41,7 @@ class NotebookScreen extends StatefulWidget {
 
 class _NotebookScreenState extends State<NotebookScreen> {
   final _scrollController = ScrollController();
-  final _classicController = TextEditingController();
+  final _classicController = _ClassicRichTextController();
   late Notebook _notebook;
   bool _isSearching = false;
   bool _showStarredOnly = false;
@@ -46,6 +50,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
   Timer? _classicSaveDebounce;
   String? _classicEntryId;
   bool _isApplyingClassicText = false;
+  _ClassicEditorSnapshot _lastClassicSnapshot = _ClassicEditorSnapshot.empty();
+  final List<_ClassicEditorSnapshot> _classicUndoStack = [];
+  final List<_ClassicEditorSnapshot> _classicRedoStack = [];
+  _ClassicEditorSnapshot? _classicTypingUndoBase;
+  Timer? _classicHistoryDebounce;
+  bool _showClassicFormattingBar = false;
   final Set<String> _selectedEntryIds = {};
 
   bool get _isSelectingEntries => _selectedEntryIds.isNotEmpty;
@@ -54,6 +64,8 @@ class _NotebookScreenState extends State<NotebookScreen> {
   void initState() {
     super.initState();
     _notebook = widget.notebook;
+    _lastClassicSnapshot = _classicController.snapshot();
+    _classicController.addListener(_trackClassicHistory);
     _classicController.addListener(_scheduleClassicSave);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<EntriesProvider>().setNotebook(_notebook.id).then((_) {
@@ -70,6 +82,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
   @override
   void dispose() {
     _classicSaveDebounce?.cancel();
+    _classicHistoryDebounce?.cancel();
     _scrollController.dispose();
     _classicController.dispose();
     _searchController.dispose();
@@ -79,13 +92,114 @@ class _NotebookScreenState extends State<NotebookScreen> {
   void _syncClassicEditor() {
     final entries = context.read<EntriesProvider>().entries;
     final entry = entries.isEmpty ? null : entries.first;
+    final document = _ClassicMarkdownCodec.decode(entry?.content ?? '');
     _classicEntryId = entry?.id;
     _isApplyingClassicText = true;
-    _classicController.text = entry?.content ?? '';
+    _classicController.restore(document);
     _classicController.selection = TextSelection.collapsed(
       offset: _classicController.text.length,
     );
+    _lastClassicSnapshot = _classicController.snapshot();
+    _classicUndoStack.clear();
+    _classicRedoStack.clear();
+    _classicTypingUndoBase = null;
     _isApplyingClassicText = false;
+  }
+
+  void _trackClassicHistory() {
+    if (_isApplyingClassicText ||
+        _notebook.entryStyle != NotebookEntryStyles.classic) {
+      _lastClassicSnapshot = _classicController.snapshot();
+      return;
+    }
+
+    final currentSnapshot = _classicController.snapshot();
+    if (currentSnapshot.hasSameContent(_lastClassicSnapshot)) {
+      _lastClassicSnapshot = currentSnapshot;
+      return;
+    }
+
+    _classicTypingUndoBase ??= _lastClassicSnapshot;
+    _classicHistoryDebounce?.cancel();
+    _classicHistoryDebounce = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted || _classicTypingUndoBase == null) return;
+      _pushClassicUndoSnapshot(_classicTypingUndoBase!);
+      _classicTypingUndoBase = null;
+      setState(() {});
+    });
+    _classicController.reflowInlineFormats(_lastClassicSnapshot.text);
+    _classicRedoStack.clear();
+    _lastClassicSnapshot = _classicController.snapshot();
+    if (mounted) setState(() {});
+  }
+
+  void _pushClassicUndoSnapshot(_ClassicEditorSnapshot snapshot) {
+    if (_classicUndoStack.isNotEmpty &&
+        _classicUndoStack.last.hasSameContent(snapshot)) {
+      return;
+    }
+    _classicUndoStack.add(snapshot);
+    if (_classicUndoStack.length > 100) {
+      _classicUndoStack.removeAt(0);
+    }
+  }
+
+  void _setClassicSnapshotFromHistory(_ClassicEditorSnapshot snapshot) {
+    _isApplyingClassicText = true;
+    _classicController.restore(snapshot);
+    _lastClassicSnapshot = _classicController.snapshot();
+    _classicTypingUndoBase = null;
+    _classicHistoryDebounce?.cancel();
+    _isApplyingClassicText = false;
+    _scheduleClassicSave();
+    if (mounted) setState(() {});
+  }
+
+  void _undoClassicEdit() {
+    _flushClassicTypingUndoStep();
+    if (_classicUndoStack.isEmpty) return;
+    _classicRedoStack.add(_classicController.snapshot());
+    _setClassicSnapshotFromHistory(_classicUndoStack.removeLast());
+  }
+
+  void _redoClassicEdit() {
+    if (_classicRedoStack.isEmpty) return;
+    _classicUndoStack.add(_classicController.snapshot());
+    _setClassicSnapshotFromHistory(_classicRedoStack.removeLast());
+  }
+
+  void _flushClassicTypingUndoStep() {
+    if (_classicTypingUndoBase == null) return;
+    _classicHistoryDebounce?.cancel();
+    _pushClassicUndoSnapshot(_classicTypingUndoBase!);
+    _classicTypingUndoBase = null;
+  }
+
+  void _applyInlineClassicFormat(_ClassicInlineFormat format) {
+    _flushClassicTypingUndoStep();
+    final before = _classicController.snapshot();
+    _classicController.toggleInlineFormat(format);
+    if (!_classicController.snapshot().hasSameContent(before)) {
+      _pushClassicUndoSnapshot(before);
+      _classicRedoStack.clear();
+      _scheduleClassicSave();
+    }
+    _classicRedoStack.clear();
+    _lastClassicSnapshot = _classicController.snapshot();
+    setState(() {});
+  }
+
+  void _applyLineClassicFormat(_ClassicLineFormat format) {
+    _flushClassicTypingUndoStep();
+    final before = _classicController.snapshot();
+    _classicController.toggleLineFormat(format);
+    if (!_classicController.snapshot().hasSameContent(before)) {
+      _pushClassicUndoSnapshot(before);
+      _classicRedoStack.clear();
+      _scheduleClassicSave();
+    }
+    _lastClassicSnapshot = _classicController.snapshot();
+    setState(() {});
   }
 
   void _scheduleClassicSave() {
@@ -104,7 +218,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     if (!mounted || _notebook.entryStyle != NotebookEntryStyles.classic) return;
 
     final provider = context.read<EntriesProvider>();
-    final text = _classicController.text;
+    final text = _ClassicMarkdownCodec.encode(_classicController.snapshot());
 
     if (_classicEntryId == null) {
       if (text.trim().isEmpty) return;
@@ -826,6 +940,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
               PopupMenuButton<String>(
                 onSelected: (value) async {
                   switch (value) {
+                    case 'formatting':
+                      setState(() {
+                        _showClassicFormattingBar = !_showClassicFormattingBar;
+                      });
+                      break;
                     case 'info':
                       _showNotebookInfo();
                       break;
@@ -849,8 +968,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
                         _notebook.id,
                       );
                       if (mounted) {
-                        final updated = await context.read<NotebooksProvider>().getNotebook(_notebook.id);
-                        if (updated != null) setState(() => _notebook = updated);
+                        final updated = await context
+                            .read<NotebooksProvider>()
+                            .getNotebook(_notebook.id);
+                        if (updated != null) {
+                          setState(() => _notebook = updated);
+                        }
                       }
                       break;
                     case 'delete':
@@ -859,6 +982,26 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   }
                 },
                 itemBuilder: (context) => [
+                  if (_notebook.entryStyle == NotebookEntryStyles.classic)
+                    PopupMenuItem(
+                      value: 'formatting',
+                      child: Row(
+                        children: [
+                          Icon(
+                            _showClassicFormattingBar
+                                ? Icons.keyboard_hide_outlined
+                                : Icons.text_fields,
+                            size: 20,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            _showClassicFormattingBar
+                                ? 'Hide Formatting'
+                                : 'Show Formatting',
+                          ),
+                        ],
+                      ),
+                    ),
                   const PopupMenuItem(
                     value: 'info',
                     child: Text('Notebook Info'),
@@ -885,7 +1028,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
                     child: Row(
                       children: [
                         Icon(
-                          _notebook.isLocked ? Icons.lock_open : Icons.lock_outline,
+                          _notebook.isLocked
+                              ? Icons.lock_open
+                              : Icons.lock_outline,
                           size: 20,
                         ),
                         const SizedBox(width: 12),
@@ -966,6 +1111,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   enabled: !_isSearching && !_isSelectingEntries,
                   notebookColor: notebookColor,
                 ),
+              if (_notebook.entryStyle == NotebookEntryStyles.classic &&
+                  _showClassicFormattingBar)
+                _buildClassicFormattingBar(Theme.of(context)),
             ],
           ),
         ),
@@ -1019,27 +1167,155 @@ class _NotebookScreenState extends State<NotebookScreen> {
         color: editorColor,
         borderRadius: BorderRadius.circular(18),
         clipBehavior: Clip.antiAlias,
-        child: TextField(
-          controller: _classicController,
-          autofocus: true,
-          expands: true,
-          minLines: null,
-          maxLines: null,
-          textAlignVertical: TextAlignVertical.top,
-          keyboardType: TextInputType.multiline,
-          textCapitalization: TextCapitalization.sentences,
-          style: theme.textTheme.bodyLarge?.copyWith(height: 1.55),
-          decoration: InputDecoration(
-            hintText: 'Start writing...',
-            filled: true,
-            fillColor: Colors.transparent,
-            border: InputBorder.none,
-            contentPadding: const EdgeInsets.all(18),
-            hintStyle: TextStyle(
-              color: theme.colorScheme.onSurface.withOpacity(0.35),
+        child: Column(
+          children: [
+            Expanded(
+              child: TextField(
+                controller: _classicController,
+                autofocus: true,
+                expands: true,
+                minLines: null,
+                maxLines: null,
+                textAlignVertical: TextAlignVertical.top,
+                keyboardType: TextInputType.multiline,
+                textCapitalization: TextCapitalization.sentences,
+                style: theme.textTheme.bodyLarge?.copyWith(height: 1.55),
+                decoration: InputDecoration(
+                  hintText: 'Start writing...',
+                  filled: true,
+                  fillColor: Colors.transparent,
+                  border: InputBorder.none,
+                  contentPadding: const EdgeInsets.all(18),
+                  hintStyle: TextStyle(
+                    color: theme.colorScheme.onSurface.withOpacity(0.35),
+                  ),
+                ),
+              ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClassicFormattingBar(ThemeData theme) {
+    final dividerColor = theme.colorScheme.onSurface.withValues(alpha: 0.08);
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: dividerColor)),
+      ),
+      child: Material(
+        color: theme.colorScheme.surface,
+        elevation: 8,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 8),
+          child: Row(
+            children: [
+              _buildClassicToolbarButton(
+                icon: Icons.arrow_back,
+                tooltip: 'Undo',
+                onPressed: _classicUndoStack.isEmpty ? null : _undoClassicEdit,
+              ),
+              _buildClassicToolbarButton(
+                icon: Icons.arrow_forward,
+                tooltip: 'Redo',
+                onPressed: _classicRedoStack.isEmpty ? null : _redoClassicEdit,
+              ),
+              _buildClassicToolbarDivider(theme),
+              _buildClassicToolbarButton(
+                icon: Icons.format_bold,
+                tooltip: 'Bold',
+                selected: _classicController.activeInlineFormats.contains(
+                  _ClassicInlineFormat.bold,
+                ),
+                onPressed: () =>
+                    _applyInlineClassicFormat(_ClassicInlineFormat.bold),
+              ),
+              _buildClassicToolbarButton(
+                icon: Icons.format_italic,
+                tooltip: 'Italic',
+                selected: _classicController.activeInlineFormats.contains(
+                  _ClassicInlineFormat.italic,
+                ),
+                onPressed: () =>
+                    _applyInlineClassicFormat(_ClassicInlineFormat.italic),
+              ),
+              _buildClassicToolbarButton(
+                icon: Icons.code,
+                tooltip: 'Inline code',
+                selected: _classicController.activeInlineFormats.contains(
+                  _ClassicInlineFormat.code,
+                ),
+                onPressed: () =>
+                    _applyInlineClassicFormat(_ClassicInlineFormat.code),
+              ),
+              _buildClassicToolbarDivider(theme),
+              _buildClassicToolbarButton(
+                icon: Icons.title,
+                tooltip: 'Heading',
+                selected:
+                    _classicController.activeLineFormat ==
+                    _ClassicLineFormat.heading,
+                onPressed: () =>
+                    _applyLineClassicFormat(_ClassicLineFormat.heading),
+              ),
+              _buildClassicToolbarButton(
+                icon: Icons.format_list_bulleted,
+                tooltip: 'Bullet list',
+                selected:
+                    _classicController.activeLineFormat ==
+                    _ClassicLineFormat.bullet,
+                onPressed: () =>
+                    _applyLineClassicFormat(_ClassicLineFormat.bullet),
+              ),
+              _buildClassicToolbarButton(
+                icon: Icons.format_quote,
+                tooltip: 'Quote',
+                selected:
+                    _classicController.activeLineFormat ==
+                    _ClassicLineFormat.quote,
+                onPressed: () =>
+                    _applyLineClassicFormat(_ClassicLineFormat.quote),
+              ),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildClassicToolbarDivider(ThemeData theme) {
+    return Container(
+      width: 1,
+      height: 24,
+      margin: const EdgeInsets.symmetric(horizontal: 6),
+      color: theme.colorScheme.onSurface.withValues(alpha: 0.10),
+    );
+  }
+
+  Widget _buildClassicToolbarButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool selected = false,
+  }) {
+    final theme = Theme.of(context);
+    return IconButton(
+      icon: Icon(icon),
+      tooltip: tooltip,
+      onPressed: onPressed,
+      visualDensity: VisualDensity.compact,
+      style: IconButton.styleFrom(
+        backgroundColor: selected
+            ? theme.colorScheme.primaryContainer
+            : Colors.transparent,
+        foregroundColor: selected
+            ? theme.colorScheme.onPrimaryContainer
+            : theme.colorScheme.onSurface,
+        minimumSize: const Size(40, 40),
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
     );
   }
@@ -1178,7 +1454,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
     for (final entry in entries) {
       if (entry.hasContent) {
         totalChars += entry.content!.length;
-        totalWords += entry.content!.trim().split(RegExp(r'\s+')).where((w) => w.isNotEmpty).length;
+        totalWords += entry.content!
+            .trim()
+            .split(RegExp(r'\s+'))
+            .where((w) => w.isNotEmpty)
+            .length;
       }
       if (entry.hasImage) imageCount++;
       if (entry.isStarred) starredCount++;
@@ -1210,7 +1490,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   height: 4,
                   margin: const EdgeInsets.only(bottom: 16),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.onSurface.withOpacity(0.1),
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.onSurface.withOpacity(0.1),
                     borderRadius: BorderRadius.circular(2),
                   ),
                 ),
@@ -1225,14 +1507,24 @@ class _NotebookScreenState extends State<NotebookScreen> {
               Text(
                 isChat ? 'Chat Notebook' : 'Classic Notebook',
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                  color: Theme.of(context).colorScheme.onSurface.withOpacity(0.5),
+                  color: Theme.of(
+                    context,
+                  ).colorScheme.onSurface.withOpacity(0.5),
                 ),
               ),
               const SizedBox(height: 20),
               const Divider(),
               const SizedBox(height: 8),
-              _buildInfoRow(Icons.format_list_bulleted, isChat ? 'Messages' : 'Entries', '${entries.length}'),
-              _buildInfoRow(Icons.text_fields, 'Characters', totalChars.toString()),
+              _buildInfoRow(
+                Icons.format_list_bulleted,
+                isChat ? 'Messages' : 'Entries',
+                '${entries.length}',
+              ),
+              _buildInfoRow(
+                Icons.text_fields,
+                'Characters',
+                totalChars.toString(),
+              ),
               _buildInfoRow(Icons.text_snippet, 'Words', totalWords.toString()),
               if (imageCount > 0)
                 _buildInfoRow(Icons.image, 'Images', imageCount.toString()),
@@ -1242,8 +1534,16 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 const SizedBox(height: 4),
                 const Divider(),
                 const SizedBox(height: 4),
-                _buildInfoRow(Icons.event_note, 'First entry', TimeUtils.getShortDate(firstEntryDate)),
-                _buildInfoRow(Icons.event, 'Last entry', TimeUtils.getShortDate(lastEntryDate!)),
+                _buildInfoRow(
+                  Icons.event_note,
+                  'First entry',
+                  TimeUtils.getShortDate(firstEntryDate),
+                ),
+                _buildInfoRow(
+                  Icons.event,
+                  'Last entry',
+                  TimeUtils.getShortDate(lastEntryDate!),
+                ),
               ],
               const SizedBox(height: 16),
             ],
@@ -1258,7 +1558,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
         children: [
-          Icon(icon, size: 20, color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6)),
+          Icon(
+            icon,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurface.withOpacity(0.6),
+          ),
           const SizedBox(width: 12),
           Text(
             label,
@@ -1269,9 +1573,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
           const Spacer(),
           Text(
             value,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
+            style: Theme.of(
+              context,
+            ).textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
         ],
       ),
@@ -1401,8 +1705,12 @@ class _NotebookScreenState extends State<NotebookScreen> {
                       Switch(
                         value: _notebook.isLocked,
                         onChanged: (value) async {
-                          await context.read<NotebooksProvider>().toggleLock(_notebook.id);
-                          final updatedNotebook = await context.read<NotebooksProvider>().getNotebook(_notebook.id);
+                          await context.read<NotebooksProvider>().toggleLock(
+                            _notebook.id,
+                          );
+                          final updatedNotebook = await context
+                              .read<NotebooksProvider>()
+                              .getNotebook(_notebook.id);
                           if (updatedNotebook != null && mounted) {
                             setState(() => _notebook = updatedNotebook);
                             setModalState(() {});
@@ -1493,4 +1801,632 @@ class _SavedImage {
     required this.annotationBaseImagePath,
     required this.annotationStrokes,
   });
+}
+
+class _ClassicStyleRange {
+  final int start;
+  final int end;
+  final _ClassicInlineFormat format;
+
+  const _ClassicStyleRange({
+    required this.start,
+    required this.end,
+    required this.format,
+  });
+
+  _ClassicStyleRange copyWith({int? start, int? end}) {
+    return _ClassicStyleRange(
+      start: start ?? this.start,
+      end: end ?? this.end,
+      format: format,
+    );
+  }
+}
+
+class _ClassicLineStyle {
+  final int start;
+  final int end;
+  final _ClassicLineFormat format;
+
+  const _ClassicLineStyle({
+    required this.start,
+    required this.end,
+    required this.format,
+  });
+
+  _ClassicLineStyle copyWith({int? start, int? end}) {
+    return _ClassicLineStyle(
+      start: start ?? this.start,
+      end: end ?? this.end,
+      format: format,
+    );
+  }
+}
+
+class _ClassicEditorSnapshot {
+  final TextEditingValue value;
+  final List<_ClassicStyleRange> inlineStyles;
+  final List<_ClassicLineStyle> lineStyles;
+
+  const _ClassicEditorSnapshot({
+    required this.value,
+    required this.inlineStyles,
+    required this.lineStyles,
+  });
+
+  factory _ClassicEditorSnapshot.empty() {
+    return const _ClassicEditorSnapshot(
+      value: TextEditingValue.empty,
+      inlineStyles: [],
+      lineStyles: [],
+    );
+  }
+
+  String get text => value.text;
+
+  bool hasSameContent(_ClassicEditorSnapshot other) {
+    if (value.text != other.value.text ||
+        inlineStyles.length != other.inlineStyles.length ||
+        lineStyles.length != other.lineStyles.length) {
+      return false;
+    }
+    for (var i = 0; i < inlineStyles.length; i++) {
+      final a = inlineStyles[i];
+      final b = other.inlineStyles[i];
+      if (a.start != b.start || a.end != b.end || a.format != b.format) {
+        return false;
+      }
+    }
+    for (var i = 0; i < lineStyles.length; i++) {
+      final a = lineStyles[i];
+      final b = other.lineStyles[i];
+      if (a.start != b.start || a.end != b.end || a.format != b.format) {
+        return false;
+      }
+    }
+    return true;
+  }
+}
+
+class _ClassicRichTextController extends TextEditingController {
+  List<_ClassicStyleRange> inlineStyles = [];
+  List<_ClassicLineStyle> lineStyles = [];
+  final Set<_ClassicInlineFormat> activeInlineFormats = {};
+  _ClassicLineFormat? activeLineFormat;
+
+  _ClassicEditorSnapshot snapshot() {
+    return _ClassicEditorSnapshot(
+      value: value,
+      inlineStyles: List<_ClassicStyleRange>.from(inlineStyles),
+      lineStyles: List<_ClassicLineStyle>.from(lineStyles),
+    );
+  }
+
+  void restore(_ClassicEditorSnapshot snapshot) {
+    value = snapshot.value;
+    inlineStyles = List<_ClassicStyleRange>.from(snapshot.inlineStyles);
+    lineStyles = List<_ClassicLineStyle>.from(snapshot.lineStyles);
+    activeInlineFormats.clear();
+    activeLineFormat = null;
+  }
+
+  void reflowInlineFormats(String previousText) {
+    final currentText = text;
+    final delta = currentText.length - previousText.length;
+    if (delta == 0) return;
+
+    var prefix = 0;
+    final minLength = previousText.length < currentText.length
+        ? previousText.length
+        : currentText.length;
+    while (prefix < minLength &&
+        previousText.codeUnitAt(prefix) == currentText.codeUnitAt(prefix)) {
+      prefix++;
+    }
+
+    inlineStyles = inlineStyles
+        .map((range) {
+          if (prefix <= range.start) {
+            return range.copyWith(
+              start: (range.start + delta).clamp(0, currentText.length),
+              end: (range.end + delta).clamp(0, currentText.length),
+            );
+          }
+          if (prefix < range.end) {
+            return range.copyWith(
+              end: (range.end + delta).clamp(range.start, currentText.length),
+            );
+          }
+          return range;
+        })
+        .where((range) => range.end > range.start)
+        .toList();
+    if (delta > 0 && activeInlineFormats.isNotEmpty) {
+      for (final format in activeInlineFormats) {
+        inlineStyles.add(
+          _ClassicStyleRange(
+            start: prefix,
+            end: prefix + delta,
+            format: format,
+          ),
+        );
+      }
+      inlineStyles = _mergeInlineStyles(inlineStyles);
+    }
+    if (delta > 0 && activeLineFormat != null) {
+      _applyLineFormatAtOffset(prefix, activeLineFormat!);
+    }
+    lineStyles = _normalizeLineStyles(lineStyles, currentText);
+  }
+
+  void toggleInlineFormat(_ClassicInlineFormat format) {
+    final selection = value.selection;
+    if (!selection.isValid) return;
+
+    final start = selection.start < selection.end
+        ? selection.start
+        : selection.end;
+    final end = selection.start < selection.end
+        ? selection.end
+        : selection.start;
+    if (start == end) {
+      if (!activeInlineFormats.add(format)) {
+        activeInlineFormats.remove(format);
+      }
+      notifyListeners();
+      return;
+    }
+
+    final existingIndex = inlineStyles.indexWhere(
+      (range) =>
+          range.format == format && range.start <= start && range.end >= end,
+    );
+    if (existingIndex >= 0) {
+      final existing = inlineStyles.removeAt(existingIndex);
+      if (existing.start < start) {
+        inlineStyles.add(existing.copyWith(end: start));
+      }
+      if (existing.end > end) {
+        inlineStyles.add(existing.copyWith(start: end));
+      }
+    } else {
+      inlineStyles.add(
+        _ClassicStyleRange(start: start, end: end, format: format),
+      );
+    }
+    inlineStyles = _mergeInlineStyles(inlineStyles);
+    notifyListeners();
+  }
+
+  void toggleLineFormat(_ClassicLineFormat format) {
+    final selection = value.selection;
+    if (!selection.isValid) return;
+
+    final textValue = text;
+    final selectionStart = selection.start < selection.end
+        ? selection.start
+        : selection.end;
+    final selectionEnd = selection.start < selection.end
+        ? selection.end
+        : selection.start;
+    final firstLineStart = selectionStart == 0
+        ? 0
+        : textValue.lastIndexOf('\n', selectionStart - 1) + 1;
+    final selectedLineEnd = selectionEnd < textValue.length
+        ? textValue.indexOf('\n', selectionEnd)
+        : textValue.length;
+    final lastLineEnd = selectedLineEnd == -1
+        ? textValue.length
+        : selectedLineEnd;
+    final bounds = _lineBounds(textValue, firstLineStart, lastLineEnd);
+    if (selectionStart == selectionEnd) {
+      final hasCurrentLineFormat = lineStyles.any(
+        (style) =>
+            style.format == format &&
+            style.start == bounds.first.$1 &&
+            style.end == bounds.first.$2,
+      );
+      if (hasCurrentLineFormat || activeLineFormat == format) {
+        var adjustedText = textValue;
+        var selectionOffset = selection.extentOffset;
+        if (format == _ClassicLineFormat.bullet &&
+            adjustedText
+                .substring(bounds.first.$1, bounds.first.$2)
+                .startsWith('• ')) {
+          adjustedText = adjustedText.replaceRange(
+            bounds.first.$1,
+            bounds.first.$1 + 2,
+            '',
+          );
+          selectionOffset = (selectionOffset - 2).clamp(0, adjustedText.length);
+          value = value.copyWith(
+            text: adjustedText,
+            selection: TextSelection.collapsed(offset: selectionOffset),
+            composing: TextRange.empty,
+          );
+        }
+        lineStyles.removeWhere(
+          (style) =>
+              style.start == bounds.first.$1 && style.end == bounds.first.$2,
+        );
+        activeLineFormat = null;
+      } else {
+        var lineStart = bounds.first.$1;
+        var lineEnd = bounds.first.$2;
+        if (format == _ClassicLineFormat.bullet &&
+            !textValue.substring(lineStart, lineEnd).startsWith('• ')) {
+          final updatedText = textValue.replaceRange(
+            lineStart,
+            lineStart,
+            '• ',
+          );
+          value = value.copyWith(
+            text: updatedText,
+            selection: TextSelection.collapsed(
+              offset: selection.extentOffset + 2,
+            ),
+            composing: TextRange.empty,
+          );
+          lineEnd += 2;
+        }
+        lineStyles.removeWhere(
+          (style) => style.start == lineStart && style.end == lineEnd,
+        );
+        lineStyles.add(
+          _ClassicLineStyle(start: lineStart, end: lineEnd, format: format),
+        );
+        activeLineFormat = format;
+      }
+      lineStyles = _normalizeLineStyles(lineStyles, text);
+      notifyListeners();
+      return;
+    }
+
+    final allLinesHaveFormat = bounds.every(
+      (bound) => lineStyles.any(
+        (style) =>
+            style.format == format &&
+            style.start == bound.$1 &&
+            style.end == bound.$2,
+      ),
+    );
+
+    lineStyles.removeWhere(
+      (style) =>
+          style.start >= firstLineStart &&
+          style.end <= lastLineEnd &&
+          (allLinesHaveFormat || style.format != format),
+    );
+
+    if (!allLinesHaveFormat) {
+      for (final bound in bounds) {
+        lineStyles.add(
+          _ClassicLineStyle(start: bound.$1, end: bound.$2, format: format),
+        );
+      }
+    }
+    lineStyles = _normalizeLineStyles(lineStyles, textValue);
+    notifyListeners();
+  }
+
+  void _applyLineFormatAtOffset(int offset, _ClassicLineFormat format) {
+    final textValue = text;
+    final lineStart = offset == 0
+        ? 0
+        : textValue.lastIndexOf('\n', offset - 1) + 1;
+    final nextNewline = textValue.indexOf('\n', lineStart);
+    final lineEnd = nextNewline == -1 ? textValue.length : nextNewline;
+    lineStyles.removeWhere(
+      (style) => style.start == lineStart && style.end == lineEnd,
+    );
+    lineStyles.add(
+      _ClassicLineStyle(start: lineStart, end: lineEnd, format: format),
+    );
+  }
+
+  @override
+  TextSpan buildTextSpan({
+    required BuildContext context,
+    TextStyle? style,
+    required bool withComposing,
+  }) {
+    final baseStyle = style ?? const TextStyle();
+    final textValue = text;
+    if (textValue.isEmpty) return TextSpan(style: baseStyle, text: '');
+
+    final spans = <TextSpan>[];
+    for (var i = 0; i < textValue.length; i++) {
+      final lineStyle = lineStyles
+          .where((range) => i >= range.start && i < range.end)
+          .firstOrNull;
+      final activeInlineStyles = inlineStyles
+          .where((range) => i >= range.start && i < range.end)
+          .map((range) => range.format)
+          .toSet();
+      final next = _nextStyleBoundary(i, textValue.length);
+      spans.add(
+        TextSpan(
+          text: textValue.substring(i, next),
+          style: _styleFor(baseStyle, lineStyle?.format, activeInlineStyles),
+        ),
+      );
+      i = next - 1;
+    }
+    return TextSpan(style: baseStyle, children: spans);
+  }
+
+  int _nextStyleBoundary(int offset, int textLength) {
+    var next = textLength;
+    for (final range in inlineStyles) {
+      if (range.start > offset && range.start < next) next = range.start;
+      if (range.end > offset && range.end < next) next = range.end;
+    }
+    for (final range in lineStyles) {
+      if (range.start > offset && range.start < next) next = range.start;
+      if (range.end > offset && range.end < next) next = range.end;
+    }
+    return next;
+  }
+
+  TextStyle _styleFor(
+    TextStyle baseStyle,
+    _ClassicLineFormat? lineFormat,
+    Set<_ClassicInlineFormat> inlineFormats,
+  ) {
+    var result = baseStyle;
+    if (lineFormat == _ClassicLineFormat.heading) {
+      result = result.copyWith(
+        fontSize: (result.fontSize ?? 16) + 6,
+        fontWeight: FontWeight.w700,
+        height: 1.35,
+      );
+    } else if (lineFormat == _ClassicLineFormat.quote) {
+      result = result.copyWith(
+        fontStyle: FontStyle.italic,
+        color: result.color?.withValues(alpha: 0.72),
+      );
+    }
+
+    if (inlineFormats.contains(_ClassicInlineFormat.bold)) {
+      result = result.copyWith(fontWeight: FontWeight.w700);
+    }
+    if (inlineFormats.contains(_ClassicInlineFormat.italic)) {
+      result = result.copyWith(fontStyle: FontStyle.italic);
+    }
+    if (inlineFormats.contains(_ClassicInlineFormat.code)) {
+      result = result.copyWith(
+        fontFamily: 'monospace',
+        backgroundColor: (result.color ?? Colors.black).withValues(alpha: 0.08),
+      );
+    }
+    return result;
+  }
+}
+
+class _ClassicMarkdownCodec {
+  static _ClassicEditorSnapshot decode(String markdown) {
+    final inlineStyles = <_ClassicStyleRange>[];
+    final lineStyles = <_ClassicLineStyle>[];
+    final plain = StringBuffer();
+    final lines = markdown.split('\n');
+
+    for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
+      var line = lines[lineIndex];
+      final lineStart = plain.length;
+      _ClassicLineFormat? lineFormat;
+
+      if (line.startsWith('# ')) {
+        lineFormat = _ClassicLineFormat.heading;
+        line = line.substring(2);
+      } else if (line.startsWith('- ')) {
+        lineFormat = _ClassicLineFormat.bullet;
+        line = '• ${line.substring(2)}';
+      } else if (line.startsWith('> ')) {
+        lineFormat = _ClassicLineFormat.quote;
+        line = line.substring(2);
+      }
+
+      _appendInlineDecoded(line, plain, inlineStyles);
+      final lineEnd = plain.length;
+      if (lineFormat != null) {
+        lineStyles.add(
+          _ClassicLineStyle(start: lineStart, end: lineEnd, format: lineFormat),
+        );
+      }
+      if (lineIndex < lines.length - 1) {
+        plain.write('\n');
+      }
+    }
+
+    return _ClassicEditorSnapshot(
+      value: TextEditingValue(text: plain.toString()),
+      inlineStyles: _mergeInlineStyles(inlineStyles),
+      lineStyles: _normalizeLineStyles(lineStyles, plain.toString()),
+    );
+  }
+
+  static String encode(_ClassicEditorSnapshot snapshot) {
+    final text = snapshot.text;
+    final inlineStyles = _mergeInlineStyles(snapshot.inlineStyles);
+    final lineStyles = _normalizeLineStyles(snapshot.lineStyles, text);
+    final result = StringBuffer();
+
+    for (final bound in _lineBounds(text, 0, text.length)) {
+      if (result.isNotEmpty) result.write('\n');
+      final lineStart = bound.$1;
+      final lineEnd = bound.$2;
+      final lineStyle = lineStyles
+          .where((style) => style.start == lineStart && style.end == lineEnd)
+          .firstOrNull;
+
+      switch (lineStyle?.format) {
+        case _ClassicLineFormat.heading:
+          result.write('# ');
+          break;
+        case _ClassicLineFormat.bullet:
+          result.write('- ');
+          break;
+        case _ClassicLineFormat.quote:
+          result.write('> ');
+          break;
+        case null:
+          break;
+      }
+
+      result.write(
+        _encodeInlineText(
+          lineStyle?.format == _ClassicLineFormat.bullet &&
+                  text.substring(lineStart, lineEnd).startsWith('• ')
+              ? text.substring(lineStart + 2, lineEnd)
+              : text.substring(lineStart, lineEnd),
+          lineStyle?.format == _ClassicLineFormat.bullet &&
+                  text.substring(lineStart, lineEnd).startsWith('• ')
+              ? lineStart + 2
+              : lineStart,
+          inlineStyles,
+        ),
+      );
+    }
+
+    return result.toString();
+  }
+
+  static void _appendInlineDecoded(
+    String markdown,
+    StringBuffer plain,
+    List<_ClassicStyleRange> inlineStyles,
+  ) {
+    final active = <_ClassicInlineFormat, int>{};
+    var i = 0;
+    while (i < markdown.length) {
+      final marker = _markerAt(markdown, i);
+      if (marker != null) {
+        final start = active.remove(marker.$1);
+        if (start == null) {
+          active[marker.$1] = plain.length;
+        } else if (plain.length > start) {
+          inlineStyles.add(
+            _ClassicStyleRange(
+              start: start,
+              end: plain.length,
+              format: marker.$1,
+            ),
+          );
+        }
+        i += marker.$2.length;
+      } else {
+        plain.write(markdown[i]);
+        i++;
+      }
+    }
+  }
+
+  static String _encodeInlineText(
+    String line,
+    int globalOffset,
+    List<_ClassicStyleRange> inlineStyles,
+  ) {
+    final markers = <int, List<String>>{};
+    for (final style in inlineStyles) {
+      final start = style.start.clamp(globalOffset, globalOffset + line.length);
+      final end = style.end.clamp(globalOffset, globalOffset + line.length);
+      if (end <= start) continue;
+      markers
+          .putIfAbsent(start - globalOffset, () => [])
+          .add(_markerFor(style.format));
+      markers
+          .putIfAbsent(end - globalOffset, () => [])
+          .insert(0, _markerFor(style.format));
+    }
+
+    final result = StringBuffer();
+    for (var i = 0; i <= line.length; i++) {
+      for (final marker in markers[i] ?? const <String>[]) {
+        result.write(marker);
+      }
+      if (i < line.length) result.write(line[i]);
+    }
+    return result.toString();
+  }
+
+  static (_ClassicInlineFormat, String)? _markerAt(String text, int offset) {
+    if (text.startsWith('**', offset)) {
+      return (_ClassicInlineFormat.bold, '**');
+    }
+    if (text.startsWith('`', offset)) {
+      return (_ClassicInlineFormat.code, '`');
+    }
+    if (text.startsWith('*', offset)) {
+      return (_ClassicInlineFormat.italic, '*');
+    }
+    return null;
+  }
+
+  static String _markerFor(_ClassicInlineFormat format) {
+    switch (format) {
+      case _ClassicInlineFormat.bold:
+        return '**';
+      case _ClassicInlineFormat.italic:
+        return '*';
+      case _ClassicInlineFormat.code:
+        return '`';
+    }
+  }
+}
+
+List<_ClassicStyleRange> _mergeInlineStyles(List<_ClassicStyleRange> styles) {
+  final sorted = [...styles]
+    ..sort((a, b) {
+      final formatCompare = a.format.index.compareTo(b.format.index);
+      if (formatCompare != 0) return formatCompare;
+      return a.start.compareTo(b.start);
+    });
+  final merged = <_ClassicStyleRange>[];
+  for (final style in sorted) {
+    if (style.end <= style.start) continue;
+    if (merged.isNotEmpty &&
+        merged.last.format == style.format &&
+        style.start <= merged.last.end) {
+      final last = merged.removeLast();
+      merged.add(
+        last.copyWith(end: style.end > last.end ? style.end : last.end),
+      );
+    } else {
+      merged.add(style);
+    }
+  }
+  return merged;
+}
+
+List<_ClassicLineStyle> _normalizeLineStyles(
+  List<_ClassicLineStyle> styles,
+  String text,
+) {
+  final normalized = <_ClassicLineStyle>[];
+  for (final style in styles) {
+    if (style.start < 0 || style.start > text.length) continue;
+    final lineStart = style.start == 0
+        ? 0
+        : text.lastIndexOf('\n', style.start - 1) + 1;
+    final nextNewline = text.indexOf('\n', lineStart);
+    final lineEnd = nextNewline == -1 ? text.length : nextNewline;
+    normalized.removeWhere(
+      (existing) => existing.start == lineStart && existing.end == lineEnd,
+    );
+    normalized.add(style.copyWith(start: lineStart, end: lineEnd));
+  }
+  return normalized;
+}
+
+List<(int, int)> _lineBounds(String text, int start, int end) {
+  final bounds = <(int, int)>[];
+  var lineStart = start;
+  while (lineStart <= end) {
+    final nextNewline = text.indexOf('\n', lineStart);
+    final lineEnd = nextNewline == -1 || nextNewline > end ? end : nextNewline;
+    bounds.add((lineStart, lineEnd));
+    if (nextNewline == -1 || nextNewline >= end) break;
+    lineStart = nextNewline + 1;
+  }
+  return bounds;
 }

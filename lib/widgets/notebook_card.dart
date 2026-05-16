@@ -9,13 +9,13 @@ import '../utils/time_utils.dart';
 class NotebookCard extends StatefulWidget {
   final Notebook notebook;
   final VoidCallback onTap;
-  final VoidCallback? onLongPress;
+  final VoidCallback? onOptionsTap;
 
   const NotebookCard({
     super.key,
     required this.notebook,
     required this.onTap,
-    this.onLongPress,
+    this.onOptionsTap,
   });
 
   @override
@@ -80,7 +80,6 @@ class _NotebookCardState extends State<NotebookCard> {
         clipBehavior: Clip.antiAlias,
         child: InkWell(
           onTap: widget.onTap,
-          onLongPress: widget.onLongPress,
           splashColor: textColor.withOpacity(0.1),
           highlightColor: textColor.withOpacity(0.05),
           child: Padding(
@@ -128,6 +127,21 @@ class _NotebookCardState extends State<NotebookCard> {
                         ),
                       ),
                     ),
+                    if (widget.onOptionsTap != null) ...[
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: widget.onOptionsTap,
+                        behavior: HitTestBehavior.opaque,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          child: Icon(
+                            Icons.more_vert,
+                            size: 18,
+                            color: textColor.withOpacity(0.7),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 8),

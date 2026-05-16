@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../models/notebook.dart';
 import '../providers/notebooks_provider.dart';
 import '../utils/constants.dart';
@@ -616,7 +617,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNotebookGrid(List<Notebook> notebooks) {
-    return GridView.builder(
+    return ReorderableGridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -629,10 +630,18 @@ class _HomeScreenState extends State<HomeScreen> {
       itemBuilder: (context, index) {
         final notebook = notebooks[index];
         return NotebookCard(
+          key: ValueKey(notebook.id),
           notebook: notebook,
           onTap: () => _navigateToNotebook(notebook),
-          onLongPress: () => _showNotebookOptions(notebook),
+          onOptionsTap: () => _showNotebookOptions(notebook),
         );
+      },
+      onReorder: (oldIndex, newIndex) {
+        context.read<NotebooksProvider>().reorderNotebooks(
+              notebooks,
+              oldIndex,
+              newIndex,
+            );
       },
     );
   }

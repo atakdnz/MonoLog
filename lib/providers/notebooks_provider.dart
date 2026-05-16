@@ -91,4 +91,30 @@ class NotebooksProvider with ChangeNotifier {
   Future<Entry?> getPreviewEntry(String notebookId) async {
     return await _db.getMostRecentEntry(notebookId);
   }
+
+  /// Reorder notebooks
+  Future<void> reorderNotebooks(List<Notebook> list, int oldIndex, int newIndex) async {
+    final Notebook item = list.removeAt(oldIndex);
+    list.insert(newIndex, item);
+
+    // Update state optimistically
+    notifyListeners();
+
+    final futures = <Future>[];
+    // Save to database and update objects in memory
+    for (int i = 0; i < list.length; i++) {
+      if (list[i].sortOrder != i) {
+        list[i] = list[i].copyWith(sortOrder: i);
+        futures.add(_db.updateNotebookSortOrder(list[i].id, i));
+      }
+    }
+    
+    await Future.wait(futures);
+    
+    // Reload fully in background to sync
+    _pinnedNotebooks = await _db.getPinnedNotebooks();
+    _regularNotebooks = await _db.getRegularNotebooks();
+    _archivedNotebooks = await _db.getArchivedNotebooks();
+    notifyListeners();
+  }
 }

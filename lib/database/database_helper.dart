@@ -25,7 +25,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 4,
+      version: 5,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -41,6 +41,7 @@ class DatabaseHelper {
         is_archived INTEGER DEFAULT 0,
         is_deleted INTEGER DEFAULT 0,
         entry_style TEXT DEFAULT 'chat',
+        sort_order INTEGER DEFAULT 0,
         deleted_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
@@ -104,6 +105,11 @@ class DatabaseHelper {
         'ALTER TABLE entries ADD COLUMN annotation_strokes TEXT',
       );
     }
+    if (oldVersion < 5) {
+      await db.execute(
+        'ALTER TABLE notebooks ADD COLUMN sort_order INTEGER DEFAULT 0',
+      );
+    }
   }
 
   // =========== NOTEBOOK OPERATIONS ===========
@@ -122,6 +128,15 @@ class DatabaseHelper {
       notebook.copyWith(updatedAt: DateTime.now()).toMap(),
       where: 'id = ?',
       whereArgs: [notebook.id],
+    );
+  }
+
+  /// Update just the sort order of a notebook
+  Future<void> updateNotebookSortOrder(String id, int sortOrder) async {
+    final db = await database;
+    await db.rawUpdate(
+      'UPDATE notebooks SET sort_order = ? WHERE id = ?',
+      [sortOrder, id],
     );
   }
 
@@ -179,7 +194,7 @@ class DatabaseHelper {
       where: includeArchived
           ? 'is_deleted = 0'
           : 'is_archived = 0 AND is_deleted = 0',
-      orderBy: 'is_pinned DESC, updated_at DESC',
+      orderBy: 'is_pinned DESC, sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
@@ -190,7 +205,7 @@ class DatabaseHelper {
     final maps = await db.query(
       'notebooks',
       where: 'is_pinned = 1 AND is_archived = 0 AND is_deleted = 0',
-      orderBy: 'updated_at DESC',
+      orderBy: 'sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
@@ -201,7 +216,7 @@ class DatabaseHelper {
     final maps = await db.query(
       'notebooks',
       where: 'is_pinned = 0 AND is_archived = 0 AND is_deleted = 0',
-      orderBy: 'updated_at DESC',
+      orderBy: 'sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }
@@ -212,7 +227,7 @@ class DatabaseHelper {
     final maps = await db.query(
       'notebooks',
       where: 'is_archived = 1 AND is_deleted = 0',
-      orderBy: 'updated_at DESC',
+      orderBy: 'sort_order ASC, updated_at DESC',
     );
     return maps.map((map) => Notebook.fromMap(map)).toList();
   }

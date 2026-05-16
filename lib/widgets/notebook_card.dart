@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
@@ -9,13 +11,15 @@ import '../utils/time_utils.dart';
 class NotebookCard extends StatefulWidget {
   final Notebook notebook;
   final VoidCallback onTap;
-  final VoidCallback? onOptionsTap;
+  final VoidCallback onSelect;
+  final bool isSelected;
 
   const NotebookCard({
     super.key,
     required this.notebook,
     required this.onTap,
-    this.onOptionsTap,
+    required this.onSelect,
+    this.isSelected = false,
   });
 
   @override
@@ -25,11 +29,23 @@ class NotebookCard extends StatefulWidget {
 class _NotebookCardState extends State<NotebookCard> {
   Entry? _previewEntry;
   bool _isLoadingPreview = true;
+  Timer? _selectionTimer;
 
   @override
   void initState() {
     super.initState();
     _loadPreview();
+  }
+
+  @override
+  void dispose() {
+    _selectionTimer?.cancel();
+    super.dispose();
+  }
+
+  void _cancelTimer() {
+    _selectionTimer?.cancel();
+    _selectionTimer = null;
   }
 
   @override
@@ -63,18 +79,30 @@ class _NotebookCardState extends State<NotebookCard> {
         : Colors.white;
     final isClassic = widget.notebook.entryStyle == NotebookEntryStyles.classic;
 
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: notebookColor.withOpacity(isDark ? 0.2 : 0.25),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
+    return Listener(
+      onPointerDown: (_) {
+        _cancelTimer();
+        _selectionTimer = Timer(const Duration(milliseconds: 300), () {
+          if (mounted && !widget.isSelected) {
+            HapticFeedback.selectionClick();
+            widget.onSelect();
+          }
+        });
+      },
+      onPointerUp: (_) => _cancelTimer(),
+      onPointerCancel: (_) => _cancelTimer(),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: notebookColor.withOpacity(isDark ? 0.2 : 0.25),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Material(
         color: notebookColor,
         borderRadius: BorderRadius.circular(16),
         clipBehavior: Clip.antiAlias,
@@ -82,117 +110,129 @@ class _NotebookCardState extends State<NotebookCard> {
           onTap: widget.onTap,
           splashColor: textColor.withOpacity(0.1),
           highlightColor: textColor.withOpacity(0.05),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header with title and pin icon
-                Row(
+          child: Stack(
+            children: [
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    if (widget.notebook.isPinned) ...[
-                      Icon(
-                        Icons.push_pin,
-                        size: 16,
-                        color: textColor.withOpacity(0.7),
-                      ),
-                      const SizedBox(width: 4),
-                    ],
-                    Expanded(
-                      child: Text(
-                        widget.notebook.title,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          color: textColor,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Tooltip(
-                      message: isClassic ? 'Classic note' : 'Chat notebook',
-                      child: Container(
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: textColor.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Icon(
-                          isClassic
-                              ? Icons.notes_outlined
-                              : Icons.chat_bubble_outline,
-                          size: 14,
-                          color: textColor.withOpacity(0.82),
-                        ),
-                      ),
-                    ),
-                    if (widget.onOptionsTap != null) ...[
-                      const SizedBox(width: 4),
-                      GestureDetector(
-                        onTap: widget.onOptionsTap,
-                        behavior: HitTestBehavior.opaque,
-                        child: Container(
-                          padding: const EdgeInsets.all(2),
-                          child: Icon(
-                            Icons.more_vert,
-                            size: 18,
+                    // Header with title and pin icon
+                    Row(
+                      children: [
+                        if (widget.notebook.isPinned) ...[
+                          Icon(
+                            Icons.push_pin,
+                            size: 16,
                             color: textColor.withOpacity(0.7),
                           ),
+                          const SizedBox(width: 4),
+                        ],
+                        Expanded(
+                          child: Text(
+                            widget.notebook.title,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: textColor,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Tooltip(
+                          message: isClassic ? 'Classic note' : 'Chat notebook',
+                          child: Container(
+                            padding: const EdgeInsets.all(5),
+                            decoration: BoxDecoration(
+                              color: textColor.withOpacity(0.12),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: Icon(
+                              isClassic
+                                  ? Icons.notes_outlined
+                                  : Icons.chat_bubble_outline,
+                              size: 14,
+                              color: textColor.withOpacity(0.82),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Preview content
+                    Expanded(
+                      child: _isLoadingPreview
+                          ? const SizedBox.shrink()
+                          : _previewEntry == null
+                          ? Text(
+                              'No entries yet',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: textColor.withOpacity(0.6),
+                                fontStyle: FontStyle.italic,
+                              ),
+                            )
+                          : Text(
+                              _previewEntry!.content ?? '📷 Image',
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: textColor.withOpacity(0.8),
+                              ),
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                    ),
+
+                    if (_previewEntry != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: textColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Text(
+                          TimeUtils.getRelativeTime(_previewEntry!.displayTime),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: textColor.withOpacity(0.8),
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
                         ),
                       ),
-                    ],
                   ],
                 ),
-                const SizedBox(height: 8),
-
-                // Preview content
-                Expanded(
-                  child: _isLoadingPreview
-                      ? const SizedBox.shrink()
-                      : _previewEntry == null
-                      ? Text(
-                          'No entries yet',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: textColor.withOpacity(0.6),
-                            fontStyle: FontStyle.italic,
-                          ),
-                        )
-                      : Text(
-                          _previewEntry!.content ?? '📷 Image',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: textColor.withOpacity(0.8),
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                ),
-
-                if (_previewEntry != null)
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
+              ),
+              if (widget.isSelected)
+                Positioned.fill(
+                  child: Container(
                     decoration: BoxDecoration(
-                      color: textColor.withOpacity(0.1),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      TimeUtils.getRelativeTime(_previewEntry!.displayTime),
-                      style: theme.textTheme.labelSmall?.copyWith(
-                        color: textColor.withOpacity(0.8),
-                        fontWeight: FontWeight.w500,
+                      color: textColor.withOpacity(0.15),
+                      border: Border.all(
+                        color: isDark ? Colors.white : notebookColor,
+                        width: 3,
                       ),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+                      borderRadius: BorderRadius.circular(16),
                     ),
                   ),
-              ],
-            ),
+                ),
+              if (widget.isSelected)
+                Positioned(
+                  top: 8,
+                  left: 8,
+                  child: Icon(
+                    Icons.check_circle,
+                    color: isDark ? Colors.white : notebookColor,
+                  ),
+                ),
+            ],
           ),
         ),
       ),
+    ),
     );
   }
 }

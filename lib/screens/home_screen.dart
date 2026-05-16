@@ -17,6 +17,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final Set<String> _selectedNotebookIds = {};
+  bool get _isSelectingNotebooks => _selectedNotebookIds.isNotEmpty;
+  int? _dragStartedIndex;
+  bool _wasReordered = false;
   @override
   void initState() {
     super.initState();
@@ -47,9 +51,96 @@ class _HomeScreenState extends State<HomeScreen> {
       context,
       MaterialPageRoute(builder: (_) => const SettingsScreen()),
     ).then((_) {
-      // Refresh notebooks in case notebook was restored from trash
       context.read<NotebooksProvider>().loadNotebooks();
     });
+  }
+
+  void _toggleNotebookSelection(Notebook notebook) {
+    setState(() {
+      if (_selectedNotebookIds.contains(notebook.id)) {
+        _selectedNotebookIds.remove(notebook.id);
+      } else {
+        _selectedNotebookIds.add(notebook.id);
+      }
+    });
+  }
+
+  void _clearSelection() {
+    setState(() => _selectedNotebookIds.clear());
+  }
+
+  List<Notebook> _getSelectedNotebooks() {
+    final provider = context.read<NotebooksProvider>();
+    final all = [
+      ...provider.pinnedNotebooks,
+      ...provider.regularNotebooks,
+      ...provider.archivedNotebooks,
+    ];
+    return all.where((n) => _selectedNotebookIds.contains(n.id)).toList();
+  }
+
+  void _handleBatchAction(String action) {
+    final selected = _getSelectedNotebooks();
+    if (selected.isEmpty) return;
+
+    final provider = context.read<NotebooksProvider>();
+    
+    switch (action) {
+      case 'edit':
+        if (selected.length == 1) {
+          _showNotebookOptions(selected.first); // Re-use the existing bottom sheet for edit
+        }
+        break;
+      case 'pin':
+        for (var n in selected) {
+          provider.togglePin(n.id);
+        }
+        _clearSelection();
+        break;
+      case 'archive':
+        for (var n in selected) {
+          provider.toggleArchive(n.id);
+        }
+        _clearSelection();
+        break;
+      case 'delete':
+        _showBatchDeleteConfirmation(selected);
+        break;
+    }
+  }
+
+  void _showBatchDeleteConfirmation(List<Notebook> notebooks) {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Delete ${notebooks.length} Notebooks?'),
+        content: const Text(
+          'They will be moved to the trash and can be restored within 30 days.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          FilledButton.tonal(
+            onPressed: () {
+              Navigator.pop(context);
+              for (var n in notebooks) {
+                context.read<NotebooksProvider>().deleteNotebook(n.id);
+              }
+              _clearSelection();
+            },
+            style: FilledButton.styleFrom(
+              foregroundColor: Theme.of(context).colorScheme.error,
+              backgroundColor: Theme.of(
+                context,
+              ).colorScheme.errorContainer.withOpacity(0.5),
+            ),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showCreateNotebookDialog() {
@@ -467,24 +558,66 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text(
-          appName,
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: _navigateToSearch,
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings_outlined),
-            onPressed: _navigateToSettings,
-          ),
-        ],
-      ),
-      body: Consumer<NotebooksProvider>(
+    return PopScope(
+      canPop: !_isSelectingNotebooks,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isSelectingNotebooks) {
+          _clearSelection();
+        }
+      },
+      child: Scaffold(
+        appBar: _isSelectingNotebooks
+            ? AppBar(
+                leading: IconButton(
+                  icon: const Icon(Icons.close),
+                  onPressed: _clearSelection,
+                ),
+                title: Text(
+                  '${_selectedNotebookIds.length} selected',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                actions: [
+                  PopupMenuButton<String>(
+                    onSelected: _handleBatchAction,
+                    itemBuilder: (context) => [
+                      if (_selectedNotebookIds.length == 1)
+                        const PopupMenuItem(
+                          value: 'edit',
+                          child: Text('Edit'),
+                        ),
+                      const PopupMenuItem(
+                        value: 'pin',
+                        child: Text('Pin/Unpin'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'archive',
+                        child: Text('Archive/Unarchive'),
+                      ),
+                      const PopupMenuItem(
+                        value: 'delete',
+                        child: Text('Delete'),
+                      ),
+                    ],
+                  ),
+                ],
+              )
+            : AppBar(
+                title: const Text(
+                  'MonoLog',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+                actions: [
+                  IconButton(
+                    icon: const Icon(Icons.search),
+                    onPressed: _navigateToSearch,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.settings_outlined),
+                    onPressed: _navigateToSettings,
+                  ),
+                ],
+              ),
+        body: Consumer<NotebooksProvider>(
         builder: (context, provider, _) {
           if (provider.isLoading) {
             return const Center(child: CircularProgressIndicator());
@@ -566,12 +699,15 @@ class _HomeScreenState extends State<HomeScreen> {
           );
         },
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _showCreateNotebookDialog,
-        backgroundColor: const Color(0xFF3b19e6),
-        foregroundColor: Colors.white,
-        elevation: 4,
-        child: const Icon(Icons.add),
+      floatingActionButton: _isSelectingNotebooks
+          ? null
+          : FloatingActionButton(
+              onPressed: _showCreateNotebookDialog,
+              backgroundColor: const Color(0xFF3b19e6),
+              foregroundColor: Colors.white,
+              elevation: 4,
+              child: const Icon(Icons.add),
+            ),
       ),
     );
   }
@@ -632,11 +768,30 @@ class _HomeScreenState extends State<HomeScreen> {
         return NotebookCard(
           key: ValueKey(notebook.id),
           notebook: notebook,
-          onTap: () => _navigateToNotebook(notebook),
-          onOptionsTap: () => _showNotebookOptions(notebook),
+          isSelected: _selectedNotebookIds.contains(notebook.id),
+          onSelect: () => _toggleNotebookSelection(notebook),
+          onTap: () {
+            if (_isSelectingNotebooks) {
+              _toggleNotebookSelection(notebook);
+            } else {
+              _navigateToNotebook(notebook);
+            }
+          },
         );
       },
+      onDragStart: (index) {
+        _dragStartedIndex = index;
+        _wasReordered = false;
+      },
       onReorder: (oldIndex, newIndex) {
+        _wasReordered = true;
+        if (oldIndex == newIndex) {
+          return;
+        }
+        // If it was actually moved, we clear the selection to match the user intent of moving.
+        setState(() {
+          _selectedNotebookIds.remove(notebooks[oldIndex].id);
+        });
         context.read<NotebooksProvider>().reorderNotebooks(
               notebooks,
               oldIndex,

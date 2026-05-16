@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:local_auth/local_auth.dart';
 import 'package:provider/provider.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../models/notebook.dart';
@@ -32,7 +33,12 @@ class _HomeScreenState extends State<HomeScreen> {
     });
   }
 
-  void _navigateToNotebook(Notebook notebook) {
+  void _navigateToNotebook(Notebook notebook) async {
+    if (notebook.isLocked) {
+      final authenticated = await _authenticateForNotebook(notebook.title);
+      if (!authenticated) return;
+    }
+
     Navigator.push(
       context,
       MaterialPageRoute(builder: (_) => NotebookScreen(notebook: notebook)),
@@ -40,6 +46,23 @@ class _HomeScreenState extends State<HomeScreen> {
       // Refresh notebooks when returning
       context.read<NotebooksProvider>().loadNotebooks();
     });
+  }
+
+  Future<bool> _authenticateForNotebook(String notebookTitle) async {
+    try {
+      final localAuth = LocalAuthentication();
+      final canCheck = await localAuth.canCheckBiometrics ||
+          await localAuth.isDeviceSupported();
+      if (!canCheck) return false;
+
+      return await localAuth.authenticate(
+        localizedReason: 'Unlock "$notebookTitle"',
+        biometricOnly: false,
+        persistAcrossBackgrounding: true,
+      );
+    } catch (_) {
+      return false;
+    }
   }
 
   void _navigateToSearch() {
@@ -384,6 +407,16 @@ class _HomeScreenState extends State<HomeScreen> {
                   context.read<NotebooksProvider>().toggleArchive(notebook.id);
                 },
               ),
+              ListTile(
+                leading: Icon(
+                  notebook.isLocked ? Icons.lock_open : Icons.lock_outline,
+                ),
+                title: Text(notebook.isLocked ? 'Remove Lock' : 'Add Lock'),
+                onTap: () {
+                  Navigator.pop(context);
+                  context.read<NotebooksProvider>().toggleLock(notebook.id);
+                },
+              ),
               const Divider(),
               ListTile(
                 leading: Icon(
@@ -690,6 +723,35 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     }).toList(),
                   ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Icon(
+                        notebook.isLocked ? Icons.lock : Icons.lock_outline,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Lock Notebook',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Switch(
+                        value: notebook.isLocked,
+                        onChanged: (value) async {
+                          await context.read<NotebooksProvider>().toggleLock(notebook.id);
+                          final updatedNotebook = await context.read<NotebooksProvider>().getNotebook(notebook.id);
+                          if (updatedNotebook != null) {
+                            notebook = updatedNotebook;
+                            setModalState(() {});
+                          }
+                        },
+                      ),
+                    ],
+                  ),
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
@@ -960,7 +1022,6 @@ class _HomeScreenState extends State<HomeScreen> {
               _navigateToNotebook(notebook);
             }
           },
-          onLongPressMenu: () => _showNotebookOptions(notebook),
         );
       },
       onReorder: (oldIndex, newIndex) {

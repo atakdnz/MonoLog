@@ -88,6 +88,12 @@ class NotebooksProvider with ChangeNotifier {
     await loadNotebooks();
   }
 
+  /// Toggle notebook lock status
+  Future<void> toggleLock(String id) async {
+    await _db.toggleNotebookLock(id);
+    await loadNotebooks();
+  }
+
   /// Get notebook by ID
   Future<Notebook?> getNotebook(String id) async {
     return await _db.getNotebook(id);

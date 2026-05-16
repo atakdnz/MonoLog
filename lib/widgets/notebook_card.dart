@@ -183,7 +183,15 @@ class _NotebookCardState extends State<NotebookCard> {
 
                     // Preview content
                     Expanded(
-                      child: _isLoadingPreview
+                      child: widget.notebook.isLocked
+                          ? Center(
+                              child: Icon(
+                                Icons.lock,
+                                size: 32,
+                                color: textColor.withOpacity(0.5),
+                              ),
+                            )
+                          : _isLoadingPreview
                           ? const SizedBox.shrink()
                           : _previewEntry == null
                           ? Text(
@@ -204,7 +212,7 @@ class _NotebookCardState extends State<NotebookCard> {
                     ),
 
                     // Footer: time (left) + folder badge (right)
-                    if (_previewEntry != null || widget.notebook.folderId != null)
+                    if (!widget.notebook.isLocked && (_previewEntry != null || widget.notebook.folderId != null))
                       Row(
                         children: [
                           // Time badge (left, always visible)

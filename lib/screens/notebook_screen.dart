@@ -841,6 +841,15 @@ class _NotebookScreenState extends State<NotebookScreen> {
                       );
                       if (mounted) Navigator.pop(context);
                       break;
+                    case 'lock':
+                      await context.read<NotebooksProvider>().toggleLock(
+                        _notebook.id,
+                      );
+                      if (mounted) {
+                        final updated = await context.read<NotebooksProvider>().getNotebook(_notebook.id);
+                        if (updated != null) setState(() => _notebook = updated);
+                      }
+                      break;
                     case 'delete':
                       _showDeleteConfirmation();
                       break;
@@ -863,6 +872,19 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   PopupMenuItem(
                     value: 'archive',
                     child: Text(_notebook.isArchived ? 'Unarchive' : 'Archive'),
+                  ),
+                  PopupMenuItem(
+                    value: 'lock',
+                    child: Row(
+                      children: [
+                        Icon(
+                          _notebook.isLocked ? Icons.lock_open : Icons.lock_outline,
+                          size: 20,
+                        ),
+                        const SizedBox(width: 12),
+                        Text(_notebook.isLocked ? 'Remove Lock' : 'Add Lock'),
+                      ],
+                    ),
                   ),
                   PopupMenuItem(
                     value: 'delete',
@@ -1239,6 +1261,35 @@ class _NotebookScreenState extends State<NotebookScreen> {
                         ),
                       );
                     }).toList(),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: [
+                      Icon(
+                        _notebook.isLocked ? Icons.lock : Icons.lock_outline,
+                        size: 20,
+                        color: Theme.of(context).colorScheme.onSurface,
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        'Lock Notebook',
+                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      const Spacer(),
+                      Switch(
+                        value: _notebook.isLocked,
+                        onChanged: (value) async {
+                          await context.read<NotebooksProvider>().toggleLock(_notebook.id);
+                          final updatedNotebook = await context.read<NotebooksProvider>().getNotebook(_notebook.id);
+                          if (updatedNotebook != null && mounted) {
+                            setState(() => _notebook = updatedNotebook);
+                            setModalState(() {});
+                          }
+                        },
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 24),
                   SizedBox(

@@ -11,6 +11,7 @@ class Notebook {
   final String entryStyle;
   final int sortOrder;
   final String? folderId;
+  final bool isLocked;
   final DateTime? deletedAt;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -25,6 +26,7 @@ class Notebook {
     this.entryStyle = NotebookEntryStyles.chat,
     this.sortOrder = 0,
     this.folderId,
+    this.isLocked = false,
     this.deletedAt,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -44,6 +46,7 @@ class Notebook {
     int? sortOrder,
     String? folderId,
     bool clearFolderId = false,
+    bool? isLocked,
     DateTime? deletedAt,
     bool clearDeletedAt = false,
     DateTime? createdAt,
@@ -59,6 +62,7 @@ class Notebook {
       entryStyle: entryStyle ?? this.entryStyle,
       sortOrder: sortOrder ?? this.sortOrder,
       folderId: clearFolderId ? null : (folderId ?? this.folderId),
+      isLocked: isLocked ?? this.isLocked,
       deletedAt: clearDeletedAt ? null : (deletedAt ?? this.deletedAt),
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -77,6 +81,7 @@ class Notebook {
       entryStyle: map['entry_style'] as String? ?? NotebookEntryStyles.chat,
       sortOrder: map['sort_order'] as int? ?? 0,
       folderId: map['folder_id'] as String?,
+      isLocked: (map['is_locked'] as int?) == 1,
       deletedAt: map['deleted_at'] != null
           ? DateTime.parse(map['deleted_at'] as String)
           : null,
@@ -97,6 +102,7 @@ class Notebook {
       'entry_style': entryStyle,
       'sort_order': sortOrder,
       'folder_id': folderId,
+      'is_locked': isLocked ? 1 : 0,
       'deleted_at': deletedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -115,6 +121,7 @@ class Notebook {
       entryStyle: json['entry_style'] as String? ?? NotebookEntryStyles.chat,
       sortOrder: json['sort_order'] as int? ?? 0,
       folderId: json['folder_id'] as String?,
+      isLocked: json['is_locked'] as bool? ?? false,
       deletedAt: json['deleted_at'] != null
           ? DateTime.parse(json['deleted_at'] as String)
           : null,
@@ -136,6 +143,7 @@ class Notebook {
       'entry_style': entryStyle,
       'sort_order': sortOrder,
       'folder_id': folderId,
+      'is_locked': isLocked,
       'deleted_at': deletedAt?.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
     };
@@ -143,7 +151,7 @@ class Notebook {
 
   @override
   String toString() {
-    return 'Notebook{id: $id, title: $title, color: $color, entryStyle: $entryStyle, isPinned: $isPinned, isArchived: $isArchived, isDeleted: $isDeleted, sortOrder: $sortOrder}';
+    return 'Notebook{id: $id, title: $title, color: $color, entryStyle: $entryStyle, isPinned: $isPinned, isArchived: $isArchived, isDeleted: $isDeleted, isLocked: $isLocked, sortOrder: $sortOrder}';
   }
 
   @override

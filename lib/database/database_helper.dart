@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 6,
+      version: 7,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -54,6 +54,7 @@ class DatabaseHelper {
         entry_style TEXT DEFAULT 'chat',
         sort_order INTEGER DEFAULT 0,
         folder_id TEXT,
+        is_locked INTEGER DEFAULT 0,
         deleted_at TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -135,6 +136,11 @@ class DatabaseHelper {
       ''');
       await db.execute(
         'ALTER TABLE notebooks ADD COLUMN folder_id TEXT',
+      );
+    }
+    if (oldVersion < 7) {
+      await db.execute(
+        'ALTER TABLE notebooks ADD COLUMN is_locked INTEGER DEFAULT 0',
       );
     }
   }
@@ -329,6 +335,20 @@ class DatabaseHelper {
       WHERE id = ?
     ''',
       [folderId, DateTime.now().toIso8601String(), notebookId],
+    );
+  }
+
+  /// Toggle notebook lock status
+  Future<void> toggleNotebookLock(String id) async {
+    final db = await database;
+    await db.rawUpdate(
+      '''
+      UPDATE notebooks 
+      SET is_locked = CASE WHEN is_locked = 1 THEN 0 ELSE 1 END,
+          updated_at = ?
+      WHERE id = ?
+    ''',
+      [DateTime.now().toIso8601String(), id],
     );
   }
 

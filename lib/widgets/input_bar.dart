@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../screens/image_annotation_screen.dart';
 import '../utils/time_utils.dart';
 
 class InputBar extends StatefulWidget {
@@ -25,6 +26,8 @@ class _InputBarState extends State<InputBar> {
   final _focusNode = FocusNode();
   final _imagePicker = ImagePicker();
   String? _attachedImagePath;
+  String? _annotationBaseImagePath;
+  List<AnnotationStroke>? _annotationStrokes;
   bool _isSending = false;
   DateTime? _selectedTime;
 
@@ -68,7 +71,11 @@ class _InputBarState extends State<InputBar> {
                     imageQuality: 85,
                   );
                   if (image != null) {
-                    setState(() => _attachedImagePath = image.path);
+                    setState(() {
+                      _attachedImagePath = image.path;
+                      _annotationBaseImagePath = null;
+                      _annotationStrokes = null;
+                    });
                   }
                 },
               ),
@@ -92,8 +99,30 @@ class _InputBarState extends State<InputBar> {
                     imageQuality: 85,
                   );
                   if (image != null) {
-                    setState(() => _attachedImagePath = image.path);
+                    setState(() {
+                      _attachedImagePath = image.path;
+                      _annotationBaseImagePath = null;
+                      _annotationStrokes = null;
+                    });
                   }
+                },
+              ),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.tertiaryContainer,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.draw_outlined,
+                    color: Theme.of(context).colorScheme.onTertiaryContainer,
+                  ),
+                ),
+                title: const Text('Blank Drawing'),
+                onTap: () async {
+                  Navigator.pop(context);
+                  await _openAnnotationEditor();
                 },
               ),
             ],
@@ -103,8 +132,46 @@ class _InputBarState extends State<InputBar> {
     );
   }
 
+  Future<void> _openAnnotationEditor({
+    String? imagePath,
+    List<AnnotationStroke> initialStrokes = const [],
+  }) async {
+    final result = await Navigator.of(context).push<ImageAnnotationResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ImageAnnotationScreen(
+          imagePath: imagePath,
+          initialStrokes: initialStrokes,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      _attachedImagePath = result.imagePath;
+      _annotationBaseImagePath = result.baseImagePath;
+      _annotationStrokes = result.strokes;
+    });
+  }
+
+  Future<void> _annotateAttachedImage() async {
+    final imagePath = _attachedImagePath;
+    if (imagePath == null) return;
+
+    await _openAnnotationEditor(
+      imagePath: _annotationStrokes == null
+          ? imagePath
+          : _annotationBaseImagePath,
+      initialStrokes: _annotationStrokes ?? const [],
+    );
+  }
+
   void _removeImage() {
-    setState(() => _attachedImagePath = null);
+    setState(() {
+      _attachedImagePath = null;
+      _annotationBaseImagePath = null;
+      _annotationStrokes = null;
+    });
   }
 
   Future<void> _send() async {
@@ -118,6 +185,8 @@ class _InputBarState extends State<InputBar> {
       _textController.clear();
       setState(() {
         _attachedImagePath = null;
+        _annotationBaseImagePath = null;
+        _annotationStrokes = null;
         _selectedTime = null;
       });
     } finally {
@@ -279,6 +348,42 @@ class _InputBarState extends State<InputBar> {
                             Icons.close,
                             size: 14,
                             color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 4,
+                      bottom: 4,
+                      child: GestureDetector(
+                        onTap: _annotateAttachedImage,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black.withOpacity(0.62),
+                            borderRadius: BorderRadius.circular(14),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                Icons.draw_outlined,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                              SizedBox(width: 4),
+                              Text(
+                                'Edit',
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       ),

@@ -1,0 +1,527 @@
+import 'dart:io';
+import 'dart:ui' as ui;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
+import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+
+class ImageAnnotationScreen extends StatefulWidget {
+  final String? imagePath;
+  final List<AnnotationStroke> initialStrokes;
+
+  const ImageAnnotationScreen({
+    super.key,
+    this.imagePath,
+    this.initialStrokes = const [],
+  });
+
+  @override
+  State<ImageAnnotationScreen> createState() => _ImageAnnotationScreenState();
+}
+
+class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
+  final _canvasKey = GlobalKey();
+  final List<AnnotationStroke> _strokes = [];
+  final List<AnnotationStroke> _redoStack = [];
+  final List<Offset> _currentPoints = [];
+
+  ui.Image? _backgroundImage;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  bool _isEraser = false;
+  Color _penColor = Colors.black;
+  double _penWidth = 5;
+
+  static const _blankCanvasSize = Size(1080, 1080);
+  static const _colors = [
+    Colors.black,
+    Colors.white,
+    Color(0xFFE53935),
+    Color(0xFFFFB300),
+    Color(0xFF43A047),
+    Color(0xFF1E88E5),
+    Color(0xFF8E24AA),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _strokes.addAll(widget.initialStrokes);
+    _loadBackground();
+  }
+
+  Future<void> _loadBackground() async {
+    if (widget.imagePath == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
+    try {
+      final bytes = await File(widget.imagePath!).readAsBytes();
+      final codec = await ui.instantiateImageCodec(bytes);
+      final frame = await codec.getNextFrame();
+      if (!mounted) return;
+      setState(() {
+        _backgroundImage = frame.image;
+        _isLoading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Size get _sourceSize {
+    final image = _backgroundImage;
+    if (image == null) return _blankCanvasSize;
+    return Size(image.width.toDouble(), image.height.toDouble());
+  }
+
+  void _startStroke(Offset point) {
+    if (_isEraser) {
+      _eraseAt(point);
+      return;
+    }
+
+    setState(() {
+      _currentPoints
+        ..clear()
+        ..add(point);
+      _redoStack.clear();
+    });
+  }
+
+  void _extendStroke(Offset point) {
+    if (_isEraser) {
+      _eraseAt(point);
+      return;
+    }
+
+    setState(() => _currentPoints.add(point));
+  }
+
+  void _finishStroke() {
+    if (_isEraser || _currentPoints.isEmpty) return;
+
+    setState(() {
+      _strokes.add(
+        AnnotationStroke(
+          points: List.of(_currentPoints),
+          color: _penColor,
+          width: _penWidth,
+        ),
+      );
+      _currentPoints.clear();
+    });
+  }
+
+  void _eraseAt(Offset point) {
+    final index = _strokes.lastIndexWhere(
+      (stroke) => stroke.hitTest(point, _penWidth * 2.4),
+    );
+    if (index == -1) return;
+
+    setState(() {
+      _redoStack
+        ..clear()
+        ..add(_strokes.removeAt(index));
+    });
+  }
+
+  void _undo() {
+    if (_strokes.isEmpty) return;
+    setState(() => _redoStack.add(_strokes.removeLast()));
+  }
+
+  void _redo() {
+    if (_redoStack.isEmpty) return;
+    setState(() => _strokes.add(_redoStack.removeLast()));
+  }
+
+  void _clearAnnotations() {
+    if (_strokes.isEmpty && _currentPoints.isEmpty) return;
+    setState(() {
+      _redoStack
+        ..clear()
+        ..addAll(_strokes);
+      _strokes.clear();
+      _currentPoints.clear();
+    });
+  }
+
+  Future<void> _saveAnnotatedImage() async {
+    setState(() => _isSaving = true);
+
+    try {
+      final boundary =
+          _canvasKey.currentContext?.findRenderObject()
+              as RenderRepaintBoundary?;
+      if (boundary == null) return;
+
+      final image = await boundary.toImage(pixelRatio: 3);
+      final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (byteData == null) return;
+
+      final tempDir = await getTemporaryDirectory();
+      final sourceName = widget.imagePath == null
+          ? 'blank_canvas'
+          : p.basenameWithoutExtension(widget.imagePath!);
+      final fileName =
+          '${DateTime.now().millisecondsSinceEpoch}_${sourceName}_annotated.png';
+      final outputPath = p.join(tempDir.path, fileName);
+      await File(outputPath).writeAsBytes(byteData.buffer.asUint8List());
+
+      if (!mounted) return;
+      Navigator.pop(
+        context,
+        ImageAnnotationResult(
+          imagePath: outputPath,
+          baseImagePath: widget.imagePath,
+          strokes: List.unmodifiable(_strokes),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final sourceSize = _sourceSize;
+    final aspectRatio = sourceSize.width / sourceSize.height;
+
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.imagePath == null ? 'Blank Drawing' : 'Annotate'),
+        actions: [
+          IconButton(
+            tooltip: 'Undo',
+            onPressed: _strokes.isEmpty ? null : _undo,
+            icon: const Icon(Icons.undo_rounded),
+          ),
+          IconButton(
+            tooltip: 'Redo',
+            onPressed: _redoStack.isEmpty ? null : _redo,
+            icon: const Icon(Icons.redo_rounded),
+          ),
+          IconButton(
+            tooltip: 'Clear annotations',
+            onPressed: _strokes.isEmpty ? null : _clearAnnotations,
+            icon: const Icon(Icons.layers_clear_rounded),
+          ),
+          TextButton(
+            onPressed: _isSaving ? null : _saveAnnotatedImage,
+            child: _isSaving
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Text('Done'),
+          ),
+        ],
+      ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : Column(
+              children: [
+                Expanded(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: AspectRatio(
+                        aspectRatio: aspectRatio,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: 0.12),
+                                blurRadius: 18,
+                                offset: const Offset(0, 8),
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(16),
+                            child: RepaintBoundary(
+                              key: _canvasKey,
+                              child: LayoutBuilder(
+                                builder: (context, constraints) {
+                                  final size = Size(
+                                    constraints.maxWidth,
+                                    constraints.maxHeight,
+                                  );
+                                  return GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onPanStart: (details) =>
+                                        _startStroke(details.localPosition),
+                                    onPanUpdate: (details) =>
+                                        _extendStroke(details.localPosition),
+                                    onPanEnd: (_) => _finishStroke(),
+                                    child: CustomPaint(
+                                      size: size,
+                                      painter: _AnnotationPainter(
+                                        backgroundImage: _backgroundImage,
+                                        strokes: _strokes,
+                                        activeStroke: _isEraser
+                                            ? null
+                                            : AnnotationStroke(
+                                                points: _currentPoints,
+                                                color: _penColor,
+                                                width: _penWidth,
+                                              ),
+                                      ),
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            SegmentedButton<bool>(
+                              segments: const [
+                                ButtonSegment(
+                                  value: false,
+                                  icon: Icon(Icons.edit_rounded),
+                                  label: Text('Pen'),
+                                ),
+                                ButtonSegment(
+                                  value: true,
+                                  icon: Icon(Icons.cleaning_services_rounded),
+                                  label: Text('Eraser'),
+                                ),
+                              ],
+                              selected: {_isEraser},
+                              onSelectionChanged: (selection) {
+                                setState(() => _isEraser = selection.first);
+                              },
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Slider(
+                                value: _penWidth,
+                                min: 2,
+                                max: 24,
+                                divisions: 11,
+                                label: '${_penWidth.round()}',
+                                onChanged: (value) =>
+                                    setState(() => _penWidth = value),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            Text(
+                              'Color',
+                              style: theme.textTheme.labelLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: SingleChildScrollView(
+                                scrollDirection: Axis.horizontal,
+                                child: Row(
+                                  children: _colors.map((color) {
+                                    final isSelected = color == _penColor;
+                                    return Padding(
+                                      padding: const EdgeInsets.only(right: 10),
+                                      child: InkWell(
+                                        onTap: _isEraser
+                                            ? null
+                                            : () => setState(
+                                                () => _penColor = color,
+                                              ),
+                                        borderRadius: BorderRadius.circular(18),
+                                        child: AnimatedContainer(
+                                          duration: const Duration(
+                                            milliseconds: 140,
+                                          ),
+                                          width: 34,
+                                          height: 34,
+                                          decoration: BoxDecoration(
+                                            color: color,
+                                            shape: BoxShape.circle,
+                                            border: Border.all(
+                                              color: isSelected
+                                                  ? theme.colorScheme.primary
+                                                  : Colors.black.withValues(
+                                                      alpha:
+                                                          color == Colors.white
+                                                          ? 0.22
+                                                          : 0.08,
+                                                    ),
+                                              width: isSelected ? 3 : 1,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class ImageAnnotationResult {
+  final String imagePath;
+  final String? baseImagePath;
+  final List<AnnotationStroke> strokes;
+
+  const ImageAnnotationResult({
+    required this.imagePath,
+    required this.baseImagePath,
+    required this.strokes,
+  });
+}
+
+class AnnotationStroke {
+  final List<Offset> points;
+  final Color color;
+  final double width;
+
+  const AnnotationStroke({
+    required this.points,
+    required this.color,
+    required this.width,
+  });
+
+  bool hitTest(Offset point, double eraserWidth) {
+    if (points.isEmpty) return false;
+    final radius = width + eraserWidth;
+
+    for (var i = 0; i < points.length; i++) {
+      if ((points[i] - point).distance <= radius) return true;
+      if (i > 0 &&
+          _distanceToSegment(point, points[i - 1], points[i]) <= radius) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  double _distanceToSegment(Offset point, Offset start, Offset end) {
+    final segment = end - start;
+    final lengthSquared = segment.dx * segment.dx + segment.dy * segment.dy;
+    if (lengthSquared == 0) return (point - start).distance;
+
+    final t =
+        (((point.dx - start.dx) * segment.dx) +
+            ((point.dy - start.dy) * segment.dy)) /
+        lengthSquared;
+    final clamped = t.clamp(0.0, 1.0);
+    final projection = Offset(
+      start.dx + segment.dx * clamped,
+      start.dy + segment.dy * clamped,
+    );
+    return (point - projection).distance;
+  }
+}
+
+class _AnnotationPainter extends CustomPainter {
+  final ui.Image? backgroundImage;
+  final List<AnnotationStroke> strokes;
+  final AnnotationStroke? activeStroke;
+
+  const _AnnotationPainter({
+    required this.backgroundImage,
+    required this.strokes,
+    required this.activeStroke,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawColor(Colors.white, BlendMode.src);
+
+    final image = backgroundImage;
+    if (image != null) {
+      paintImage(
+        canvas: canvas,
+        rect: Offset.zero & size,
+        image: image,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+      );
+    }
+
+    for (final stroke in strokes) {
+      _paintStroke(canvas, stroke);
+    }
+
+    final active = activeStroke;
+    if (active != null) {
+      _paintStroke(canvas, active);
+    }
+  }
+
+  void _paintStroke(Canvas canvas, AnnotationStroke stroke) {
+    if (stroke.points.isEmpty) return;
+
+    final paint = Paint()
+      ..color = stroke.color
+      ..strokeWidth = stroke.width
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
+      ..style = PaintingStyle.stroke;
+
+    if (stroke.points.length == 1) {
+      canvas.drawCircle(stroke.points.first, stroke.width / 2, paint);
+      return;
+    }
+
+    final path = Path()..moveTo(stroke.points.first.dx, stroke.points.first.dy);
+    for (var i = 1; i < stroke.points.length; i++) {
+      final previous = stroke.points[i - 1];
+      final current = stroke.points[i];
+      final midpoint = Offset(
+        (previous.dx + current.dx) / 2,
+        (previous.dy + current.dy) / 2,
+      );
+      path.quadraticBezierTo(
+        previous.dx,
+        previous.dy,
+        midpoint.dx,
+        midpoint.dy,
+      );
+    }
+    path.lineTo(stroke.points.last.dx, stroke.points.last.dy);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _AnnotationPainter oldDelegate) {
+    return oldDelegate.backgroundImage != backgroundImage ||
+        oldDelegate.strokes != strokes ||
+        oldDelegate.activeStroke != activeStroke;
+  }
+}

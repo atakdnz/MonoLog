@@ -3,10 +3,17 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../models/annotation_stroke.dart';
 import '../screens/image_annotation_screen.dart';
+import '../services/annotation_metadata_service.dart';
 import '../utils/time_utils.dart';
 
 class InputBar extends StatefulWidget {
-  final Function(String content, String? imagePath, DateTime? customTime)
+  final Function(
+    String content,
+    String? imagePath,
+    DateTime? customTime,
+    String? annotationBaseImagePath,
+    String? annotationStrokes,
+  )
   onSend;
   final bool enabled;
   final Color? notebookColor;
@@ -182,7 +189,15 @@ class _InputBarState extends State<InputBar> {
     setState(() => _isSending = true);
 
     try {
-      await widget.onSend(text, _attachedImagePath, _selectedTime);
+      await widget.onSend(
+        text,
+        _attachedImagePath,
+        _selectedTime,
+        _annotationBaseImagePath,
+        _annotationStrokes == null
+            ? null
+            : AnnotationMetadataService.encodeStrokes(_annotationStrokes!),
+      );
       _textController.clear();
       setState(() {
         _attachedImagePath = null;

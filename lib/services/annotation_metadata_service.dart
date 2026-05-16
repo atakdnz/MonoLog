@@ -28,6 +28,25 @@ class AnnotationMetadataService {
     );
   }
 
+  static String encodeStrokes(List<AnnotationStroke> strokes) {
+    return json.encode(strokes.map(_strokeToJson).toList());
+  }
+
+  static List<AnnotationStroke> decodeStrokes(String? strokesJson) {
+    if (strokesJson == null || strokesJson.isEmpty) return const [];
+
+    try {
+      final decoded = json.decode(strokesJson);
+      if (decoded is! List) return const [];
+      return decoded
+          .whereType<Map<String, dynamic>>()
+          .map(_strokeFromJson)
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
   static Future<ImageAnnotationMetadata?> readMetadata(String imagePath) async {
     final file = File(metadataPathForImage(imagePath));
     if (!await file.exists()) return null;

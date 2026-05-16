@@ -25,7 +25,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 3,
+      version: 4,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -53,6 +53,8 @@ class DatabaseHelper {
         notebook_id TEXT NOT NULL,
         content TEXT,
         image_path TEXT,
+        annotation_base_image_path TEXT,
+        annotation_strokes TEXT,
         display_time TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -92,6 +94,14 @@ class DatabaseHelper {
     if (oldVersion < 3) {
       await db.execute(
         "ALTER TABLE notebooks ADD COLUMN entry_style TEXT DEFAULT 'chat'",
+      );
+    }
+    if (oldVersion < 4) {
+      await db.execute(
+        'ALTER TABLE entries ADD COLUMN annotation_base_image_path TEXT',
+      );
+      await db.execute(
+        'ALTER TABLE entries ADD COLUMN annotation_strokes TEXT',
       );
     }
   }

@@ -10,6 +10,7 @@ A journal-style note-taking app for Android built with Flutter. MonoLog is desig
 - Color-coded notebooks
 - Time-based entry grouping and date headers
 - Text and image entries
+- Draw and annotate on images or blank canvases
 - Starred entries
 - Custom display times for entries
 - Global and notebook-level search

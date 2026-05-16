@@ -127,7 +127,11 @@ class _NotebookScreenState extends State<NotebookScreen> {
     await provider.updateEntry(entry.copyWith(content: text));
   }
 
-  Future<String?> _saveImage(String sourcePath) async {
+  Future<_SavedImage?> _saveImage(
+    String sourcePath, {
+    String? annotationBaseImagePath,
+    String? annotationStrokes,
+  }) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final imagesDir = Directory(p.join(appDir.path, 'images'));
@@ -140,25 +144,43 @@ class _NotebookScreenState extends State<NotebookScreen> {
       final destPath = p.join(imagesDir.path, fileName);
       await File(sourcePath).copy(destPath);
 
+      var savedBaseImagePath = annotationBaseImagePath;
+      var savedStrokes = annotationStrokes;
+
       final metadata = await AnnotationMetadataService.readMetadata(sourcePath);
-      if (metadata != null) {
-        String? baseImagePath = metadata.baseImagePath;
+      if (metadata != null && savedStrokes == null) {
+        savedBaseImagePath = metadata.baseImagePath;
+        savedStrokes = AnnotationMetadataService.encodeStrokes(
+          metadata.strokes,
+        );
+      }
+
+      if (savedStrokes != null) {
+        String? baseImagePath = savedBaseImagePath;
         if (baseImagePath != null && await File(baseImagePath).exists()) {
-          final baseFileName =
-              '${DateTime.now().millisecondsSinceEpoch}_base_${p.basename(baseImagePath)}';
-          final baseDestPath = p.join(imagesDir.path, baseFileName);
-          await File(baseImagePath).copy(baseDestPath);
-          baseImagePath = baseDestPath;
+          // Only copy the base image if it's not already in app storage.
+          if (!p.isWithin(imagesDir.path, baseImagePath)) {
+            final baseFileName =
+                '${DateTime.now().millisecondsSinceEpoch}_base_${p.basename(baseImagePath)}';
+            final baseDestPath = p.join(imagesDir.path, baseFileName);
+            await File(baseImagePath).copy(baseDestPath);
+            baseImagePath = baseDestPath;
+          }
         }
 
         await AnnotationMetadataService.writeMetadata(
           imagePath: destPath,
           baseImagePath: baseImagePath,
-          strokes: metadata.strokes,
+          strokes: AnnotationMetadataService.decodeStrokes(savedStrokes),
         );
+        savedBaseImagePath = baseImagePath;
       }
 
-      return destPath;
+      return _SavedImage(
+        imagePath: destPath,
+        annotationBaseImagePath: savedBaseImagePath,
+        annotationStrokes: savedStrokes,
+      );
     } catch (e) {
       debugPrint('Error saving image: $e');
       return null;
@@ -169,15 +191,23 @@ class _NotebookScreenState extends State<NotebookScreen> {
     String content,
     String? imagePath,
     DateTime? customTime,
+    String? annotationBaseImagePath,
+    String? annotationStrokes,
   ) async {
-    String? savedImagePath;
+    _SavedImage? savedImage;
     if (imagePath != null) {
-      savedImagePath = await _saveImage(imagePath);
+      savedImage = await _saveImage(
+        imagePath,
+        annotationBaseImagePath: annotationBaseImagePath,
+        annotationStrokes: annotationStrokes,
+      );
     }
 
     await context.read<EntriesProvider>().addEntry(
       content: content,
-      imagePath: savedImagePath,
+      imagePath: savedImage?.imagePath,
+      annotationBaseImagePath: savedImage?.annotationBaseImagePath,
+      annotationStrokes: savedImage?.annotationStrokes,
       displayTime: customTime,
     );
 
@@ -397,8 +427,13 @@ class _NotebookScreenState extends State<NotebookScreen> {
     final metadata = await AnnotationMetadataService.readMetadata(
       entry.imagePath!,
     );
-    final baseImagePath = metadata?.baseImagePath ?? entry.imagePath!;
-    final initialStrokes = metadata?.strokes ?? const <AnnotationStroke>[];
+    final baseImagePath =
+        entry.annotationBaseImagePath ??
+        metadata?.baseImagePath ??
+        entry.imagePath!;
+    final initialStrokes = entry.annotationStrokes != null
+        ? AnnotationMetadataService.decodeStrokes(entry.annotationStrokes)
+        : metadata?.strokes ?? const <AnnotationStroke>[];
 
     if (!mounted) return;
     final result = await Navigator.of(context).push<ImageAnnotationResult>(
@@ -413,11 +448,21 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
     if (result == null || !mounted) return;
 
-    final savedImagePath = await _saveImage(result.imagePath);
-    if (savedImagePath == null || !mounted) return;
+    final savedImage = await _saveImage(
+      result.imagePath,
+      annotationBaseImagePath: result.baseImagePath,
+      annotationStrokes: AnnotationMetadataService.encodeStrokes(
+        result.strokes,
+      ),
+    );
+    if (savedImage == null || !mounted) return;
 
     await context.read<EntriesProvider>().updateEntry(
-      entry.copyWith(imagePath: savedImagePath),
+      entry.copyWith(
+        imagePath: savedImage.imagePath,
+        annotationBaseImagePath: savedImage.annotationBaseImagePath,
+        annotationStrokes: savedImage.annotationStrokes,
+      ),
     );
     if (!mounted) return;
 
@@ -692,24 +737,6 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   return Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      IconButton(
-                        icon: Icon(
-                          allVisibleSelected
-                              ? Icons.deselect
-                              : Icons.select_all,
-                        ),
-                        tooltip: allVisibleSelected
-                            ? 'Clear selection'
-                            : 'Select visible',
-                        onPressed: allVisibleSelected
-                            ? _clearEntrySelection
-                            : () => _selectVisibleEntries(visibleEntries),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.copy),
-                        tooltip: 'Copy',
-                        onPressed: () => _copySelectedEntries(visibleEntries),
-                      ),
                       if (selectedEntries.length == 1 &&
                           selectedEntries.first.hasImage)
                         IconButton(
@@ -721,6 +748,21 @@ class _NotebookScreenState extends State<NotebookScreen> {
                             _annotateEntryImage(entry);
                           },
                         ),
+                      if (selectedEntries.length == 1)
+                        IconButton(
+                          icon: const Icon(Icons.edit_outlined),
+                          tooltip: 'Edit entry',
+                          onPressed: () {
+                            final entry = selectedEntries.first;
+                            _clearEntrySelection();
+                            _navigateToEdit(entry);
+                          },
+                        ),
+                      IconButton(
+                        icon: const Icon(Icons.copy),
+                        tooltip: 'Copy',
+                        onPressed: () => _copySelectedEntries(visibleEntries),
+                      ),
                       IconButton(
                         icon: Icon(
                           selectedAreAllStarred
@@ -735,6 +777,20 @@ class _NotebookScreenState extends State<NotebookScreen> {
                           !selectedAreAllStarred,
                         ),
                       ),
+                      if (selectedEntries.length != 1)
+                        IconButton(
+                          icon: Icon(
+                            allVisibleSelected
+                                ? Icons.deselect
+                                : Icons.select_all,
+                          ),
+                          tooltip: allVisibleSelected
+                              ? 'Clear selection'
+                              : 'Select visible',
+                          onPressed: allVisibleSelected
+                              ? _clearEntrySelection
+                              : () => _selectVisibleEntries(visibleEntries),
+                        ),
                       if (selectedEntries.length == 1)
                         IconButton(
                           icon: const Icon(Icons.more_vert),
@@ -1028,13 +1084,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
               }
             : null,
         onImageLongPress: entry.hasImage
-            ? () {
-                if (_isSelectingEntries) {
-                  _toggleEntrySelection(entry);
-                } else {
-                  _showEntryOptions(entry);
-                }
-              }
+            ? () => _toggleEntrySelection(entry)
             : null,
       ),
     );
@@ -1260,4 +1310,16 @@ class _NotebookScreenState extends State<NotebookScreen> {
       ),
     );
   }
+}
+
+class _SavedImage {
+  final String imagePath;
+  final String? annotationBaseImagePath;
+  final String? annotationStrokes;
+
+  const _SavedImage({
+    required this.imagePath,
+    required this.annotationBaseImagePath,
+    required this.annotationStrokes,
+  });
 }

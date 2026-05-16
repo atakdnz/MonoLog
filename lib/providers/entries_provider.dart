@@ -40,6 +40,8 @@ class EntriesProvider with ChangeNotifier {
   Future<Entry> addEntry({
     required String content,
     String? imagePath,
+    String? annotationBaseImagePath,
+    String? annotationStrokes,
     DateTime? displayTime,
   }) async {
     if (_currentNotebookId == null) {
@@ -50,6 +52,8 @@ class EntriesProvider with ChangeNotifier {
       notebookId: _currentNotebookId!,
       content: content.isEmpty ? null : content,
       imagePath: imagePath,
+      annotationBaseImagePath: annotationBaseImagePath,
+      annotationStrokes: annotationStrokes,
       displayTime: displayTime,
     );
 

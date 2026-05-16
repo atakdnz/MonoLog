@@ -32,6 +32,8 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
   late DateTime _displayTime;
   late bool _isStarred;
   String? _imagePath;
+  String? _annotationBaseImagePath;
+  String? _annotationStrokes;
   bool _hasChanges = false;
   final _imagePicker = ImagePicker();
 
@@ -44,6 +46,8 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
     _displayTime = widget.entry.displayTime;
     _isStarred = widget.entry.isStarred;
     _imagePath = widget.entry.imagePath;
+    _annotationBaseImagePath = widget.entry.annotationBaseImagePath;
+    _annotationStrokes = widget.entry.annotationStrokes;
 
     _contentController.addListener(_onChanged);
   }
@@ -61,7 +65,11 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
     }
   }
 
-  Future<String?> _saveImage(String sourcePath) async {
+  Future<_SavedImage?> _saveImage(
+    String sourcePath, {
+    String? annotationBaseImagePath,
+    String? annotationStrokes,
+  }) async {
     try {
       final appDir = await getApplicationDocumentsDirectory();
       final imagesDir = Directory(p.join(appDir.path, 'images'));
@@ -74,16 +82,43 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
       final destPath = p.join(imagesDir.path, fileName);
       await File(sourcePath).copy(destPath);
 
+      var savedBaseImagePath = annotationBaseImagePath;
+      var savedStrokes = annotationStrokes;
+
       final metadata = await AnnotationMetadataService.readMetadata(sourcePath);
-      if (metadata != null) {
-        await AnnotationMetadataService.writeMetadata(
-          imagePath: destPath,
-          baseImagePath: metadata.baseImagePath,
-          strokes: metadata.strokes,
+      if (metadata != null && savedStrokes == null) {
+        savedBaseImagePath = metadata.baseImagePath;
+        savedStrokes = AnnotationMetadataService.encodeStrokes(
+          metadata.strokes,
         );
       }
 
-      return destPath;
+      if (savedStrokes != null) {
+        String? baseImagePath = savedBaseImagePath;
+        if (baseImagePath != null && await File(baseImagePath).exists()) {
+          // Only copy the base image if it's not already in app storage.
+          if (!p.isWithin(imagesDir.path, baseImagePath)) {
+            final baseFileName =
+                '${DateTime.now().millisecondsSinceEpoch}_base_${p.basename(baseImagePath)}';
+            final baseDestPath = p.join(imagesDir.path, baseFileName);
+            await File(baseImagePath).copy(baseDestPath);
+            baseImagePath = baseDestPath;
+          }
+        }
+
+        await AnnotationMetadataService.writeMetadata(
+          imagePath: destPath,
+          baseImagePath: baseImagePath,
+          strokes: AnnotationMetadataService.decodeStrokes(savedStrokes),
+        );
+        savedBaseImagePath = baseImagePath;
+      }
+
+      return _SavedImage(
+        imagePath: destPath,
+        annotationBaseImagePath: savedBaseImagePath,
+        annotationStrokes: savedStrokes,
+      );
     } catch (e) {
       debugPrint('Error saving image: $e');
       return null;
@@ -123,10 +158,12 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
                     imageQuality: 85,
                   );
                   if (image != null) {
-                    final savedPath = await _saveImage(image.path);
-                    if (savedPath != null) {
+                    final savedImage = await _saveImage(image.path);
+                    if (savedImage != null) {
                       setState(() {
-                        _imagePath = savedPath;
+                        _imagePath = savedImage.imagePath;
+                        _annotationBaseImagePath = null;
+                        _annotationStrokes = null;
                         _hasChanges = true;
                       });
                     }
@@ -153,10 +190,12 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
                     imageQuality: 85,
                   );
                   if (image != null) {
-                    final savedPath = await _saveImage(image.path);
-                    if (savedPath != null) {
+                    final savedImage = await _saveImage(image.path);
+                    if (savedImage != null) {
                       setState(() {
-                        _imagePath = savedPath;
+                        _imagePath = savedImage.imagePath;
+                        _annotationBaseImagePath = null;
+                        _annotationStrokes = null;
                         _hasChanges = true;
                       });
                     }
@@ -199,8 +238,11 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
     if (imagePath == null) return;
 
     final metadata = await AnnotationMetadataService.readMetadata(imagePath);
-    final baseImagePath = metadata?.baseImagePath ?? imagePath;
-    final initialStrokes = metadata?.strokes ?? const <AnnotationStroke>[];
+    final baseImagePath =
+        _annotationBaseImagePath ?? metadata?.baseImagePath ?? imagePath;
+    final initialStrokes = _annotationStrokes != null
+        ? AnnotationMetadataService.decodeStrokes(_annotationStrokes)
+        : metadata?.strokes ?? const <AnnotationStroke>[];
 
     if (!mounted) return;
     final result = await Navigator.of(context).push<ImageAnnotationResult>(
@@ -215,11 +257,19 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
 
     if (result == null || !mounted) return;
 
-    final savedPath = await _saveImage(result.imagePath);
-    if (savedPath == null || !mounted) return;
+    final savedImage = await _saveImage(
+      result.imagePath,
+      annotationBaseImagePath: result.baseImagePath,
+      annotationStrokes: AnnotationMetadataService.encodeStrokes(
+        result.strokes,
+      ),
+    );
+    if (savedImage == null || !mounted) return;
 
     setState(() {
-      _imagePath = savedPath;
+      _imagePath = savedImage.imagePath;
+      _annotationBaseImagePath = savedImage.annotationBaseImagePath;
+      _annotationStrokes = savedImage.annotationStrokes;
       _hasChanges = true;
     });
   }
@@ -284,11 +334,15 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
     final updatedEntry = widget.entry.copyWith(
       content: content.isEmpty ? null : content,
       imagePath: _imagePath,
+      annotationBaseImagePath: _annotationBaseImagePath,
+      annotationStrokes: _annotationStrokes,
       displayTime: _displayTime,
       isStarred: _isStarred,
       updatedAt: DateTime.now(),
       clearContent: content.isEmpty,
       clearImagePath: _imagePath == null && widget.entry.imagePath != null,
+      clearAnnotationBaseImagePath: _annotationBaseImagePath == null,
+      clearAnnotationStrokes: _annotationStrokes == null,
     );
 
     await context.read<EntriesProvider>().updateEntry(updatedEntry);
@@ -623,6 +677,8 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
                           _buildImageButton(Icons.delete, () {
                             setState(() {
                               _imagePath = null;
+                              _annotationBaseImagePath = null;
+                              _annotationStrokes = null;
                               _hasChanges = true;
                             });
                           }),
@@ -704,4 +760,16 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
       ),
     );
   }
+}
+
+class _SavedImage {
+  final String imagePath;
+  final String? annotationBaseImagePath;
+  final String? annotationStrokes;
+
+  const _SavedImage({
+    required this.imagePath,
+    required this.annotationBaseImagePath,
+    required this.annotationStrokes,
+  });
 }

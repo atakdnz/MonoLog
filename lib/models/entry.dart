@@ -5,6 +5,8 @@ class Entry {
   final String notebookId;
   final String? content;
   final String? imagePath;
+  final String? annotationBaseImagePath;
+  final String? annotationStrokes;
   final DateTime displayTime;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -17,6 +19,8 @@ class Entry {
     required this.notebookId,
     this.content,
     this.imagePath,
+    this.annotationBaseImagePath,
+    this.annotationStrokes,
     DateTime? displayTime,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -34,6 +38,8 @@ class Entry {
     String? notebookId,
     String? content,
     String? imagePath,
+    String? annotationBaseImagePath,
+    String? annotationStrokes,
     DateTime? displayTime,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -42,6 +48,8 @@ class Entry {
     DateTime? deletedAt,
     bool clearContent = false,
     bool clearImagePath = false,
+    bool clearAnnotationBaseImagePath = false,
+    bool clearAnnotationStrokes = false,
     bool clearDeletedAt = false,
   }) {
     return Entry(
@@ -49,6 +57,12 @@ class Entry {
       notebookId: notebookId ?? this.notebookId,
       content: clearContent ? null : (content ?? this.content),
       imagePath: clearImagePath ? null : (imagePath ?? this.imagePath),
+      annotationBaseImagePath: clearAnnotationBaseImagePath
+          ? null
+          : (annotationBaseImagePath ?? this.annotationBaseImagePath),
+      annotationStrokes: clearAnnotationStrokes
+          ? null
+          : (annotationStrokes ?? this.annotationStrokes),
       displayTime: displayTime ?? this.displayTime,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -65,6 +79,8 @@ class Entry {
       notebookId: map['notebook_id'] as String,
       content: map['content'] as String?,
       imagePath: map['image_path'] as String?,
+      annotationBaseImagePath: map['annotation_base_image_path'] as String?,
+      annotationStrokes: map['annotation_strokes'] as String?,
       displayTime: DateTime.parse(map['display_time'] as String),
       createdAt: DateTime.parse(map['created_at'] as String),
       updatedAt: DateTime.parse(map['updated_at'] as String),
@@ -83,6 +99,8 @@ class Entry {
       'notebook_id': notebookId,
       'content': content,
       'image_path': imagePath,
+      'annotation_base_image_path': annotationBaseImagePath,
+      'annotation_strokes': annotationStrokes,
       'display_time': displayTime.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -99,6 +117,9 @@ class Entry {
       notebookId: notebookId,
       content: json['content'] as String?,
       imagePath: json['image_filename'] as String?,
+      annotationBaseImagePath:
+          json['annotation_base_image_filename'] as String?,
+      annotationStrokes: json['annotation_strokes'] as String?,
       displayTime: DateTime.parse(json['display_time'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
@@ -116,6 +137,10 @@ class Entry {
       'id': id,
       'content': content,
       'image_filename': imagePath != null ? imagePath!.split('/').last : null,
+      'annotation_base_image_filename': annotationBaseImagePath != null
+          ? annotationBaseImagePath!.split('/').last
+          : null,
+      'annotation_strokes': annotationStrokes,
       'display_time': displayTime.toIso8601String(),
       'is_starred': isStarred,
       'created_at': createdAt.toIso8601String(),
@@ -127,6 +152,13 @@ class Entry {
 
   /// Check if the entry has an image
   bool get hasImage => imagePath != null && imagePath!.isNotEmpty;
+
+  /// Check if the entry has editable annotation layer data
+  bool get hasEditableAnnotations =>
+      annotationBaseImagePath != null &&
+      annotationBaseImagePath!.isNotEmpty &&
+      annotationStrokes != null &&
+      annotationStrokes!.isNotEmpty;
 
   /// Check if the entry is empty (no content and no image)
   bool get isEmpty => !hasContent && !hasImage;

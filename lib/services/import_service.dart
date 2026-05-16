@@ -97,12 +97,21 @@ class ImportService {
             if (imageFilename != null && imageMap.containsKey(imageFilename)) {
               imagePath = imageMap[imageFilename];
             }
+            String? annotationBaseImagePath;
+            final annotationBaseImageFilename =
+                entryData['annotation_base_image_filename'] as String?;
+            if (annotationBaseImageFilename != null &&
+                imageMap.containsKey(annotationBaseImageFilename)) {
+              annotationBaseImagePath = imageMap[annotationBaseImageFilename];
+            }
 
             final entry = Entry(
               id: entryData['id'] as String,
               notebookId: notebook.id,
               content: entryData['content'] as String?,
               imagePath: imagePath,
+              annotationBaseImagePath: annotationBaseImagePath,
+              annotationStrokes: entryData['annotation_strokes'] as String?,
               displayTime: DateTime.parse(entryData['display_time'] as String),
               createdAt: DateTime.parse(entryData['created_at'] as String),
               isStarred: entryData['is_starred'] as bool? ?? false,
@@ -202,12 +211,21 @@ class ImportService {
           if (imageFilename != null && imageMap.containsKey(imageFilename)) {
             imagePath = imageMap[imageFilename];
           }
+          String? annotationBaseImagePath;
+          final annotationBaseImageFilename =
+              entryData['annotation_base_image_filename'] as String?;
+          if (annotationBaseImageFilename != null &&
+              imageMap.containsKey(annotationBaseImageFilename)) {
+            annotationBaseImagePath = imageMap[annotationBaseImageFilename];
+          }
 
           final entry = Entry(
             id: '${DateTime.now().millisecondsSinceEpoch}_${entryData['id']}',
             notebookId: newNotebook.id, // Use new notebook ID
             content: entryData['content'] as String?,
             imagePath: imagePath,
+            annotationBaseImagePath: annotationBaseImagePath,
+            annotationStrokes: entryData['annotation_strokes'] as String?,
             displayTime: DateTime.parse(entryData['display_time'] as String),
             createdAt: DateTime.parse(entryData['created_at'] as String),
             isStarred: entryData['is_starred'] as bool? ?? false,
@@ -288,6 +306,13 @@ class ImportService {
             if (imageFilename != null && imageMap.containsKey(imageFilename)) {
               imagePath = imageMap[imageFilename];
             }
+            String? annotationBaseImagePath;
+            final annotationBaseImageFilename =
+                entryData['annotation_base_image_filename'] as String?;
+            if (annotationBaseImageFilename != null &&
+                imageMap.containsKey(annotationBaseImageFilename)) {
+              annotationBaseImagePath = imageMap[annotationBaseImageFilename];
+            }
 
             // Create entry with new ID to avoid conflicts
             final entry = Entry(
@@ -295,6 +320,8 @@ class ImportService {
               notebookId: targetNotebookId, // Use target notebook ID
               content: entryData['content'] as String?,
               imagePath: imagePath,
+              annotationBaseImagePath: annotationBaseImagePath,
+              annotationStrokes: entryData['annotation_strokes'] as String?,
               displayTime: DateTime.parse(entryData['display_time'] as String),
               createdAt: DateTime.parse(entryData['created_at'] as String),
               isStarred: entryData['is_starred'] as bool? ?? false,

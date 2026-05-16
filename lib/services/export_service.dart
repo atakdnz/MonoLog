@@ -92,6 +92,28 @@ class ExportService {
             }
           }
 
+          if (entry.annotationBaseImagePath != null &&
+              entry.annotationBaseImagePath!.isNotEmpty) {
+            final baseImageFile = File(entry.annotationBaseImagePath!);
+            if (await baseImageFile.exists()) {
+              final dateStr = TimeUtils.formatDate(
+                entry.displayTime,
+              ).replaceAll('/', '-');
+              final timeStr = TimeUtils.getEntryTime(
+                entry.displayTime,
+              ).replaceAll(':', '-');
+              final ext = p.extension(entry.annotationBaseImagePath!);
+              final imageFilename =
+                  '${sanitizedNotebookName}_${dateStr}_${timeStr}_base$ext';
+
+              imagesToInclude[entry.annotationBaseImagePath!] = {
+                'filename': imageFilename,
+                'notebook': sanitizedNotebookName,
+              };
+              entryJson['annotation_base_image_filename'] = imageFilename;
+            }
+          }
+
           entries.add(entryJson);
         }
 

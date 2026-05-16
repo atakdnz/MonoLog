@@ -6,6 +6,9 @@ import 'package:flutter/rendering.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import '../models/annotation_stroke.dart';
+import '../services/annotation_metadata_service.dart';
+
 class ImageAnnotationScreen extends StatefulWidget {
   final String? imagePath;
   final List<AnnotationStroke> initialStrokes;
@@ -30,8 +33,10 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
   bool _isEraser = false;
+  bool _usesBrushEraser = false;
   Color _penColor = Colors.black;
   double _penWidth = 5;
+  double _eraserWidth = 18;
 
   static const _blankCanvasSize = Size(1080, 1080);
   static const _colors = [
@@ -117,8 +122,13 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
   }
 
   void _eraseAt(Offset point) {
+    if (_usesBrushEraser) {
+      _brushEraseAt(point);
+      return;
+    }
+
     final index = _strokes.lastIndexWhere(
-      (stroke) => stroke.hitTest(point, _penWidth * 2.4),
+      (stroke) => stroke.hitTest(point, _eraserWidth),
     );
     if (index == -1) return;
 
@@ -126,6 +136,29 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
       _redoStack
         ..clear()
         ..add(_strokes.removeAt(index));
+    });
+  }
+
+  void _brushEraseAt(Offset point) {
+    var changed = false;
+    final updatedStrokes = <AnnotationStroke>[];
+
+    for (final stroke in _strokes) {
+      final segments = stroke.eraseAt(point, _eraserWidth);
+      if (segments.length != 1 ||
+          segments.first.points.length != stroke.points.length) {
+        changed = true;
+      }
+      updatedStrokes.addAll(segments);
+    }
+
+    if (!changed) return;
+
+    setState(() {
+      _redoStack.clear();
+      _strokes
+        ..clear()
+        ..addAll(updatedStrokes);
     });
   }
 
@@ -171,6 +204,11 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
           '${DateTime.now().millisecondsSinceEpoch}_${sourceName}_annotated.png';
       final outputPath = p.join(tempDir.path, fileName);
       await File(outputPath).writeAsBytes(byteData.buffer.asUint8List());
+      await AnnotationMetadataService.writeMetadata(
+        imagePath: outputPath,
+        baseImagePath: widget.imagePath,
+        strokes: _strokes,
+      );
 
       if (!mounted) return;
       Navigator.pop(
@@ -209,7 +247,7 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
           IconButton(
             tooltip: 'Clear annotations',
             onPressed: _strokes.isEmpty ? null : _clearAnnotations,
-            icon: const Icon(Icons.layers_clear_rounded),
+            icon: const Icon(Icons.delete_sweep_outlined),
           ),
           TextButton(
             onPressed: _isSaving ? null : _saveAnnotatedImage,
@@ -316,17 +354,59 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
                             const SizedBox(width: 12),
                             Expanded(
                               child: Slider(
-                                value: _penWidth,
-                                min: 2,
-                                max: 24,
-                                divisions: 11,
-                                label: '${_penWidth.round()}',
-                                onChanged: (value) =>
-                                    setState(() => _penWidth = value),
+                                value: _isEraser ? _eraserWidth : _penWidth,
+                                min: _isEraser ? 8 : 2,
+                                max: _isEraser ? 56 : 24,
+                                divisions: _isEraser ? 12 : 11,
+                                label:
+                                    '${(_isEraser ? _eraserWidth : _penWidth).round()}',
+                                onChanged: (value) {
+                                  setState(() {
+                                    if (_isEraser) {
+                                      _eraserWidth = value;
+                                    } else {
+                                      _penWidth = value;
+                                    }
+                                  });
+                                },
                               ),
                             ),
                           ],
                         ),
+                        if (_isEraser) ...[
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Text(
+                                'Erase',
+                                style: theme.textTheme.labelLarge?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              SegmentedButton<bool>(
+                                segments: const [
+                                  ButtonSegment(
+                                    value: false,
+                                    icon: Icon(Icons.gesture_rounded),
+                                    label: Text('Stroke'),
+                                  ),
+                                  ButtonSegment(
+                                    value: true,
+                                    icon: Icon(Icons.brush_rounded),
+                                    label: Text('Brush'),
+                                  ),
+                                ],
+                                selected: {_usesBrushEraser},
+                                onSelectionChanged: (selection) {
+                                  setState(
+                                    () => _usesBrushEraser = selection.first,
+                                  );
+                                },
+                              ),
+                            ],
+                          ),
+                        ],
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -402,50 +482,6 @@ class ImageAnnotationResult {
     required this.baseImagePath,
     required this.strokes,
   });
-}
-
-class AnnotationStroke {
-  final List<Offset> points;
-  final Color color;
-  final double width;
-
-  const AnnotationStroke({
-    required this.points,
-    required this.color,
-    required this.width,
-  });
-
-  bool hitTest(Offset point, double eraserWidth) {
-    if (points.isEmpty) return false;
-    final radius = width + eraserWidth;
-
-    for (var i = 0; i < points.length; i++) {
-      if ((points[i] - point).distance <= radius) return true;
-      if (i > 0 &&
-          _distanceToSegment(point, points[i - 1], points[i]) <= radius) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  double _distanceToSegment(Offset point, Offset start, Offset end) {
-    final segment = end - start;
-    final lengthSquared = segment.dx * segment.dx + segment.dy * segment.dy;
-    if (lengthSquared == 0) return (point - start).distance;
-
-    final t =
-        (((point.dx - start.dx) * segment.dx) +
-            ((point.dy - start.dy) * segment.dy)) /
-        lengthSquared;
-    final clamped = t.clamp(0.0, 1.0);
-    final projection = Offset(
-      start.dx + segment.dx * clamped,
-      start.dy + segment.dy * clamped,
-    );
-    return (point - projection).distance;
-  }
 }
 
 class _AnnotationPainter extends CustomPainter {

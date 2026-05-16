@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
+import '../models/annotation_stroke.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
 import '../providers/entries_provider.dart';
@@ -14,6 +15,8 @@ import '../utils/time_utils.dart';
 import '../widgets/entry_bubble.dart';
 import '../widgets/date_header.dart';
 import '../widgets/input_bar.dart';
+import 'image_annotation_screen.dart';
+import '../services/annotation_metadata_service.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
 import 'entry_edit_screen.dart';
@@ -136,6 +139,25 @@ class _NotebookScreenState extends State<NotebookScreen> {
           '${DateTime.now().millisecondsSinceEpoch}_${p.basename(sourcePath)}';
       final destPath = p.join(imagesDir.path, fileName);
       await File(sourcePath).copy(destPath);
+
+      final metadata = await AnnotationMetadataService.readMetadata(sourcePath);
+      if (metadata != null) {
+        String? baseImagePath = metadata.baseImagePath;
+        if (baseImagePath != null && await File(baseImagePath).exists()) {
+          final baseFileName =
+              '${DateTime.now().millisecondsSinceEpoch}_base_${p.basename(baseImagePath)}';
+          final baseDestPath = p.join(imagesDir.path, baseFileName);
+          await File(baseImagePath).copy(baseDestPath);
+          baseImagePath = baseDestPath;
+        }
+
+        await AnnotationMetadataService.writeMetadata(
+          imagePath: destPath,
+          baseImagePath: baseImagePath,
+          strokes: metadata.strokes,
+        );
+      }
+
       return destPath;
     } catch (e) {
       debugPrint('Error saving image: $e');
@@ -313,6 +335,16 @@ class _NotebookScreenState extends State<NotebookScreen> {
                   _navigateToEdit(entry);
                 },
               ),
+              if (entry.hasImage)
+                ListTile(
+                  leading: const Icon(Icons.draw_outlined),
+                  title: const Text('Edit Drawing'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _clearEntrySelection();
+                    _annotateEntryImage(entry);
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.drive_file_move_outlined),
                 title: const Text('Move to...'),
@@ -357,6 +389,41 @@ class _NotebookScreenState extends State<NotebookScreen> {
     ).then((_) {
       context.read<EntriesProvider>().loadEntries();
     });
+  }
+
+  Future<void> _annotateEntryImage(Entry entry) async {
+    if (!entry.hasImage) return;
+
+    final metadata = await AnnotationMetadataService.readMetadata(
+      entry.imagePath!,
+    );
+    final baseImagePath = metadata?.baseImagePath ?? entry.imagePath!;
+    final initialStrokes = metadata?.strokes ?? const <AnnotationStroke>[];
+
+    if (!mounted) return;
+    final result = await Navigator.of(context).push<ImageAnnotationResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ImageAnnotationScreen(
+          imagePath: baseImagePath,
+          initialStrokes: initialStrokes,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    final savedImagePath = await _saveImage(result.imagePath);
+    if (savedImagePath == null || !mounted) return;
+
+    await context.read<EntriesProvider>().updateEntry(
+      entry.copyWith(imagePath: savedImagePath),
+    );
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Drawing updated')));
   }
 
   void _showMoveDialog(Entry entry) async {
@@ -633,6 +700,17 @@ class _NotebookScreenState extends State<NotebookScreen> {
                         tooltip: 'Copy',
                         onPressed: () => _copySelectedEntries(visibleEntries),
                       ),
+                      if (selectedEntries.length == 1 &&
+                          selectedEntries.first.hasImage)
+                        IconButton(
+                          icon: const Icon(Icons.draw_outlined),
+                          tooltip: 'Edit drawing',
+                          onPressed: () {
+                            final entry = selectedEntries.first;
+                            _clearEntrySelection();
+                            _annotateEntryImage(entry);
+                          },
+                        ),
                       IconButton(
                         icon: Icon(
                           selectedAreAllStarred

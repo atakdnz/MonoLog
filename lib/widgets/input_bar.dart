@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import '../models/annotation_stroke.dart';
 import '../screens/image_annotation_screen.dart';
 import '../utils/time_utils.dart';
 

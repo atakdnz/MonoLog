@@ -4,9 +4,12 @@ import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:image_picker/image_picker.dart';
+import '../models/annotation_stroke.dart';
 import '../models/entry.dart';
 import '../providers/entries_provider.dart';
 import '../providers/notebooks_provider.dart';
+import '../screens/image_annotation_screen.dart';
+import '../services/annotation_metadata_service.dart';
 import '../utils/constants.dart';
 import '../utils/time_utils.dart';
 
@@ -70,6 +73,16 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
           '${DateTime.now().millisecondsSinceEpoch}_${p.basename(sourcePath)}';
       final destPath = p.join(imagesDir.path, fileName);
       await File(sourcePath).copy(destPath);
+
+      final metadata = await AnnotationMetadataService.readMetadata(sourcePath);
+      if (metadata != null) {
+        await AnnotationMetadataService.writeMetadata(
+          imagePath: destPath,
+          baseImagePath: metadata.baseImagePath,
+          strokes: metadata.strokes,
+        );
+      }
+
       return destPath;
     } catch (e) {
       debugPrint('Error saving image: $e');
@@ -179,6 +192,36 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
         ),
       ),
     );
+  }
+
+  Future<void> _annotateImage() async {
+    final imagePath = _imagePath;
+    if (imagePath == null) return;
+
+    final metadata = await AnnotationMetadataService.readMetadata(imagePath);
+    final baseImagePath = metadata?.baseImagePath ?? imagePath;
+    final initialStrokes = metadata?.strokes ?? const <AnnotationStroke>[];
+
+    if (!mounted) return;
+    final result = await Navigator.of(context).push<ImageAnnotationResult>(
+      MaterialPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => ImageAnnotationScreen(
+          imagePath: baseImagePath,
+          initialStrokes: initialStrokes,
+        ),
+      ),
+    );
+
+    if (result == null || !mounted) return;
+
+    final savedPath = await _saveImage(result.imagePath);
+    if (savedPath == null || !mounted) return;
+
+    setState(() {
+      _imagePath = savedPath;
+      _hasChanges = true;
+    });
   }
 
   Future<void> _pickTimeOnly() async {
@@ -571,6 +614,11 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
                       child: Row(
                         children: [
                           _buildImageButton(Icons.edit, _pickImage),
+                          const SizedBox(width: 8),
+                          _buildImageButton(
+                            Icons.draw_outlined,
+                            _annotateImage,
+                          ),
                           const SizedBox(width: 8),
                           _buildImageButton(Icons.delete, () {
                             setState(() {

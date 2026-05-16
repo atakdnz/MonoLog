@@ -76,6 +76,12 @@ class EntriesProvider with ChangeNotifier {
     await loadEntries();
   }
 
+  /// Set star status for multiple entries
+  Future<void> setEntriesStarred(List<String> ids, bool isStarred) async {
+    await _db.setEntriesStarred(ids, isStarred);
+    await loadEntries();
+  }
+
   /// Move entry to a different notebook
   Future<void> moveEntry(String entryId, String newNotebookId) async {
     await _db.moveEntry(entryId, newNotebookId);

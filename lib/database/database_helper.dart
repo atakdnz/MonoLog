@@ -361,6 +361,23 @@ class DatabaseHelper {
     );
   }
 
+  /// Set star status for multiple entries
+  Future<void> setEntriesStarred(List<String> ids, bool isStarred) async {
+    if (ids.isEmpty) return;
+
+    final db = await database;
+    final placeholders = List.filled(ids.length, '?').join(', ');
+    await db.rawUpdate(
+      '''
+      UPDATE entries
+      SET is_starred = ?,
+          updated_at = ?
+      WHERE id IN ($placeholders)
+    ''',
+      [isStarred ? 1 : 0, DateTime.now().toIso8601String(), ...ids],
+    );
+  }
+
   /// Move entry to a different notebook
   Future<void> moveEntry(String entryId, String newNotebookId) async {
     final db = await database;

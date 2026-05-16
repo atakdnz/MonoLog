@@ -252,6 +252,33 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _clearEntrySelection();
   }
 
+  Future<void> _setSelectedEntriesStarred(
+    List<Entry> visibleEntries,
+    bool isStarred,
+  ) async {
+    final selectedEntries = _selectedEntriesInReadingOrder(visibleEntries);
+    if (selectedEntries.isEmpty) return;
+
+    await context.read<EntriesProvider>().setEntriesStarred(
+      selectedEntries.map((entry) => entry.id).toList(),
+      isStarred,
+    );
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          selectedEntries.length == 1
+              ? (isStarred ? 'Entry starred' : 'Star removed')
+              : isStarred
+              ? '${selectedEntries.length} entries starred'
+              : 'Stars removed from ${selectedEntries.length} entries',
+        ),
+      ),
+    );
+    _clearEntrySelection();
+  }
+
   void _showEntryOptions(Entry entry) {
     showModalBottomSheet(
       context: context,
@@ -532,213 +559,242 @@ class _NotebookScreenState extends State<NotebookScreen> {
       isDark ? 0.13 : 0.16,
     )!;
 
-    return Scaffold(
-      appBar: AppBar(
-        centerTitle: false,
-        leading: _isSelectingEntries
-            ? IconButton(
-                icon: const Icon(Icons.close),
-                tooltip: 'Clear selection',
-                onPressed: _clearEntrySelection,
-              )
-            : null,
-        title: _isSelectingEntries
-            ? Text(
-                '${_selectedEntryIds.length} selected',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              )
-            : _isSearching
-            ? TextField(
-                controller: _searchController,
-                autofocus: true,
-                decoration: const InputDecoration(
-                  hintText: 'Search in notebook...',
-                  border: InputBorder.none,
-                ),
-                onChanged: _performSearch,
-              )
-            : Text(
-                _notebook.title,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-        actions: [
-          if (_isSelectingEntries)
-            Consumer<EntriesProvider>(
-              builder: (context, provider, _) {
-                final visibleEntries = _visibleChatEntries(provider);
-                final allVisibleSelected =
-                    visibleEntries.isNotEmpty &&
-                    visibleEntries.every(
-                      (entry) => _selectedEntryIds.contains(entry.id),
-                    );
-                final selectedEntries = visibleEntries
-                    .where((entry) => _selectedEntryIds.contains(entry.id))
-                    .toList();
-
-                return Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      icon: Icon(
-                        allVisibleSelected ? Icons.deselect : Icons.select_all,
-                      ),
-                      tooltip: allVisibleSelected
-                          ? 'Clear selection'
-                          : 'Select visible',
-                      onPressed: allVisibleSelected
-                          ? _clearEntrySelection
-                          : () => _selectVisibleEntries(visibleEntries),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.copy),
-                      tooltip: 'Copy',
-                      onPressed: () => _copySelectedEntries(visibleEntries),
-                    ),
-                    if (selectedEntries.length == 1)
-                      IconButton(
-                        icon: const Icon(Icons.more_vert),
-                        tooltip: 'More',
-                        onPressed: () =>
-                            _showEntryOptions(selectedEntries.first),
-                      ),
-                  ],
-                );
-              },
-            )
-          else if (_notebook.entryStyle == NotebookEntryStyles.chat)
-            IconButton(
-              icon: Icon(_isSearching ? Icons.close : Icons.search),
-              onPressed: _toggleSearch,
-            ),
-          if (!_isSearching && !_isSelectingEntries) ...[
-            if (_notebook.entryStyle == NotebookEntryStyles.chat) ...[
-              IconButton(
-                icon: Icon(
-                  _showStarredOnly ? Icons.star : Icons.star_border,
-                  color: _showStarredOnly ? Colors.amber[600] : null,
-                ),
-                onPressed: () =>
-                    setState(() => _showStarredOnly = !_showStarredOnly),
-                tooltip: _showStarredOnly ? 'Show all' : 'Show starred only',
-              ),
-              IconButton(
-                icon: const Icon(Icons.calendar_today),
-                onPressed: _showJumpToDatePicker,
-              ),
-            ],
-            PopupMenuButton<String>(
-              onSelected: (value) async {
-                switch (value) {
-                  case 'edit':
-                    _showEditNotebookDialog();
-                    break;
-                  case 'export':
-                    _exportNotebook();
-                    break;
-                  case 'import':
-                    _importIntoNotebook();
-                    break;
-                  case 'archive':
-                    await context.read<NotebooksProvider>().toggleArchive(
-                      _notebook.id,
-                    );
-                    if (mounted) Navigator.pop(context);
-                    break;
-                  case 'delete':
-                    _showDeleteConfirmation();
-                    break;
-                }
-              },
-              itemBuilder: (context) => [
-                const PopupMenuItem(
-                  value: 'edit',
-                  child: Text('Edit Notebook'),
-                ),
-                const PopupMenuItem(
-                  value: 'export',
-                  child: Text('Export Notebook'),
-                ),
-                if (_notebook.entryStyle == NotebookEntryStyles.chat)
-                  const PopupMenuItem(
-                    value: 'import',
-                    child: Text('Import and Merge'),
+    return PopScope(
+      canPop: !_isSelectingEntries,
+      onPopInvokedWithResult: (didPop, result) {
+        if (!didPop && _isSelectingEntries) {
+          _clearEntrySelection();
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          centerTitle: false,
+          leading: _isSelectingEntries
+              ? IconButton(
+                  icon: const Icon(Icons.close),
+                  tooltip: 'Clear selection',
+                  onPressed: _clearEntrySelection,
+                )
+              : null,
+          title: _isSelectingEntries
+              ? Text(
+                  '${_selectedEntryIds.length} selected',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                )
+              : _isSearching
+              ? TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Search in notebook...',
+                    border: InputBorder.none,
                   ),
-                PopupMenuItem(
-                  value: 'archive',
-                  child: Text(_notebook.isArchived ? 'Unarchive' : 'Archive'),
+                  onChanged: _performSearch,
+                )
+              : Text(
+                  _notebook.title,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
-                PopupMenuItem(
-                  value: 'delete',
-                  child: Text(
-                    'Delete',
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-      body: ColoredBox(
-        color: chatBackground,
-        child: Column(
-          children: [
-            Expanded(
-              child: Consumer<EntriesProvider>(
+          actions: [
+            if (_isSelectingEntries)
+              Consumer<EntriesProvider>(
                 builder: (context, provider, _) {
-                  if (provider.isLoading) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
+                  final visibleEntries = _visibleChatEntries(provider);
+                  final allVisibleSelected =
+                      visibleEntries.isNotEmpty &&
+                      visibleEntries.every(
+                        (entry) => _selectedEntryIds.contains(entry.id),
+                      );
+                  final selectedEntries = visibleEntries
+                      .where((entry) => _selectedEntryIds.contains(entry.id))
+                      .toList();
+                  final selectedAreAllStarred =
+                      selectedEntries.isNotEmpty &&
+                      selectedEntries.every((entry) => entry.isStarred);
 
-                  if (_notebook.entryStyle == NotebookEntryStyles.classic) {
-                    if (_classicEntryId == null &&
-                        _classicController.text.isEmpty &&
-                        provider.entries.isNotEmpty) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) _syncClassicEditor();
-                      });
-                    }
-                    return _buildClassicEditor(notebookColor);
-                  }
-
-                  final entries = _visibleChatEntries(provider);
-
-                  if (entries.isEmpty) {
-                    return _buildEmptyState();
-                  }
-
-                  // Entries from provider are DESC (newest first)
-                  // With reverse:true ListView, index 0 appears at bottom
-                  // So for time-based spacing, we compare each entry with the one BELOW it
-                  return ListView.builder(
-                    controller: _scrollController,
-                    reverse: true,
-                    padding: const EdgeInsets.only(top: 8, bottom: 8),
-                    itemCount: entries.length,
-                    itemBuilder: (context, index) {
-                      final entry = entries[index];
-                      // The entry that appears ABOVE this one visually (older in time)
-                      final olderEntry = index < entries.length - 1
-                          ? entries[index + 1]
-                          : null;
-                      // The entry that appears BELOW this one visually (newer in time)
-                      final newerEntry = index > 0 ? entries[index - 1] : null;
-
-                      return _buildEntryItem(entry, olderEntry, newerEntry);
-                    },
+                  return Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: Icon(
+                          allVisibleSelected
+                              ? Icons.deselect
+                              : Icons.select_all,
+                        ),
+                        tooltip: allVisibleSelected
+                            ? 'Clear selection'
+                            : 'Select visible',
+                        onPressed: allVisibleSelected
+                            ? _clearEntrySelection
+                            : () => _selectVisibleEntries(visibleEntries),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.copy),
+                        tooltip: 'Copy',
+                        onPressed: () => _copySelectedEntries(visibleEntries),
+                      ),
+                      IconButton(
+                        icon: Icon(
+                          selectedAreAllStarred
+                              ? Icons.star
+                              : Icons.star_border,
+                        ),
+                        tooltip: selectedAreAllStarred
+                            ? 'Remove star'
+                            : 'Star selected',
+                        onPressed: () => _setSelectedEntriesStarred(
+                          visibleEntries,
+                          !selectedAreAllStarred,
+                        ),
+                      ),
+                      if (selectedEntries.length == 1)
+                        IconButton(
+                          icon: const Icon(Icons.more_vert),
+                          tooltip: 'More',
+                          onPressed: () =>
+                              _showEntryOptions(selectedEntries.first),
+                        ),
+                    ],
                   );
                 },
+              )
+            else if (_notebook.entryStyle == NotebookEntryStyles.chat)
+              IconButton(
+                icon: Icon(_isSearching ? Icons.close : Icons.search),
+                onPressed: _toggleSearch,
               ),
-            ),
-            if (_notebook.entryStyle == NotebookEntryStyles.chat)
-              InputBar(
-                onSend: _handleSend,
-                enabled: !_isSearching && !_isSelectingEntries,
-                notebookColor: notebookColor,
+            if (!_isSearching && !_isSelectingEntries) ...[
+              if (_notebook.entryStyle == NotebookEntryStyles.chat) ...[
+                IconButton(
+                  icon: Icon(
+                    _showStarredOnly ? Icons.star : Icons.star_border,
+                    color: _showStarredOnly ? Colors.amber[600] : null,
+                  ),
+                  onPressed: () =>
+                      setState(() => _showStarredOnly = !_showStarredOnly),
+                  tooltip: _showStarredOnly ? 'Show all' : 'Show starred only',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.calendar_today),
+                  onPressed: _showJumpToDatePicker,
+                ),
+              ],
+              PopupMenuButton<String>(
+                onSelected: (value) async {
+                  switch (value) {
+                    case 'edit':
+                      _showEditNotebookDialog();
+                      break;
+                    case 'export':
+                      _exportNotebook();
+                      break;
+                    case 'import':
+                      _importIntoNotebook();
+                      break;
+                    case 'archive':
+                      await context.read<NotebooksProvider>().toggleArchive(
+                        _notebook.id,
+                      );
+                      if (mounted) Navigator.pop(context);
+                      break;
+                    case 'delete':
+                      _showDeleteConfirmation();
+                      break;
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'edit',
+                    child: Text('Edit Notebook'),
+                  ),
+                  const PopupMenuItem(
+                    value: 'export',
+                    child: Text('Export Notebook'),
+                  ),
+                  if (_notebook.entryStyle == NotebookEntryStyles.chat)
+                    const PopupMenuItem(
+                      value: 'import',
+                      child: Text('Import and Merge'),
+                    ),
+                  PopupMenuItem(
+                    value: 'archive',
+                    child: Text(_notebook.isArchived ? 'Unarchive' : 'Archive'),
+                  ),
+                  PopupMenuItem(
+                    value: 'delete',
+                    child: Text(
+                      'Delete',
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  ),
+                ],
               ),
+            ],
           ],
+        ),
+        body: ColoredBox(
+          color: chatBackground,
+          child: Column(
+            children: [
+              Expanded(
+                child: Consumer<EntriesProvider>(
+                  builder: (context, provider, _) {
+                    if (provider.isLoading) {
+                      return const Center(child: CircularProgressIndicator());
+                    }
+
+                    if (_notebook.entryStyle == NotebookEntryStyles.classic) {
+                      if (_classicEntryId == null &&
+                          _classicController.text.isEmpty &&
+                          provider.entries.isNotEmpty) {
+                        WidgetsBinding.instance.addPostFrameCallback((_) {
+                          if (mounted) _syncClassicEditor();
+                        });
+                      }
+                      return _buildClassicEditor(notebookColor);
+                    }
+
+                    final entries = _visibleChatEntries(provider);
+
+                    if (entries.isEmpty) {
+                      return _buildEmptyState();
+                    }
+
+                    // Entries from provider are DESC (newest first)
+                    // With reverse:true ListView, index 0 appears at bottom
+                    // So for time-based spacing, we compare each entry with the one BELOW it
+                    return ListView.builder(
+                      controller: _scrollController,
+                      reverse: true,
+                      padding: const EdgeInsets.only(top: 8, bottom: 8),
+                      itemCount: entries.length,
+                      itemBuilder: (context, index) {
+                        final entry = entries[index];
+                        // The entry that appears ABOVE this one visually (older in time)
+                        final olderEntry = index < entries.length - 1
+                            ? entries[index + 1]
+                            : null;
+                        // The entry that appears BELOW this one visually (newer in time)
+                        final newerEntry = index > 0
+                            ? entries[index - 1]
+                            : null;
+
+                        return _buildEntryItem(entry, olderEntry, newerEntry);
+                      },
+                    );
+                  },
+                ),
+              ),
+              if (_notebook.entryStyle == NotebookEntryStyles.chat)
+                InputBar(
+                  onSend: _handleSend,
+                  enabled: !_isSearching && !_isSelectingEntries,
+                  notebookColor: notebookColor,
+                ),
+            ],
+          ),
         ),
       ),
     );

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
@@ -42,6 +43,9 @@ class _NotebookScreenState extends State<NotebookScreen> {
   Timer? _classicSaveDebounce;
   String? _classicEntryId;
   bool _isApplyingClassicText = false;
+  final Set<String> _selectedEntryIds = {};
+
+  bool get _isSelectingEntries => _selectedEntryIds.isNotEmpty;
 
   @override
   void initState() {
@@ -165,6 +169,89 @@ class _NotebookScreenState extends State<NotebookScreen> {
     }
   }
 
+  List<Entry> _visibleChatEntries(EntriesProvider provider) {
+    var entries = _isSearching && _searchController.text.isNotEmpty
+        ? _searchResults
+        : provider.entries;
+
+    if (_showStarredOnly) {
+      entries = entries.where((e) => e.isStarred).toList();
+    }
+
+    return entries;
+  }
+
+  void _toggleEntrySelection(Entry entry) {
+    setState(() {
+      if (_selectedEntryIds.contains(entry.id)) {
+        _selectedEntryIds.remove(entry.id);
+      } else {
+        _selectedEntryIds.add(entry.id);
+      }
+    });
+  }
+
+  void _clearEntrySelection() {
+    setState(_selectedEntryIds.clear);
+  }
+
+  void _selectVisibleEntries(List<Entry> entries) {
+    setState(() {
+      _selectedEntryIds
+        ..clear()
+        ..addAll(entries.map((entry) => entry.id));
+    });
+  }
+
+  List<Entry> _selectedEntriesInReadingOrder(List<Entry> entries) {
+    return entries
+        .where((entry) => _selectedEntryIds.contains(entry.id))
+        .toList()
+        .reversed
+        .toList();
+  }
+
+  String _copyTextForEntries(List<Entry> entries) {
+    return entries
+        .map((entry) {
+          final parts = <String>[];
+          if (entry.hasContent) {
+            parts.add(entry.content!.trimRight());
+          }
+          if (entry.hasImage) {
+            parts.add('[Image: ${entry.imagePath}]');
+          }
+          return parts.join('\n');
+        })
+        .where((text) => text.trim().isNotEmpty)
+        .join('\n\n');
+  }
+
+  Future<void> _copySelectedEntries(List<Entry> visibleEntries) async {
+    final selectedEntries = _selectedEntriesInReadingOrder(visibleEntries);
+    final text = _copyTextForEntries(selectedEntries);
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Selected entries have nothing to copy')),
+      );
+      return;
+    }
+
+    await Clipboard.setData(ClipboardData(text: text));
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          selectedEntries.length == 1
+              ? 'Entry copied'
+              : '${selectedEntries.length} entries copied',
+        ),
+      ),
+    );
+    _clearEntrySelection();
+  }
+
   void _showEntryOptions(Entry entry) {
     showModalBottomSheet(
       context: context,
@@ -186,6 +273,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 title: Text(entry.isStarred ? 'Remove Star' : 'Add Star'),
                 onTap: () {
                   Navigator.pop(context);
+                  _clearEntrySelection();
                   context.read<EntriesProvider>().toggleStar(entry.id);
                 },
               ),
@@ -194,6 +282,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 title: const Text('Edit'),
                 onTap: () {
                   Navigator.pop(context);
+                  _clearEntrySelection();
                   _navigateToEdit(entry);
                 },
               ),
@@ -202,6 +291,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 title: const Text('Move to...'),
                 onTap: () {
                   Navigator.pop(context);
+                  _clearEntrySelection();
                   _showMoveDialog(entry);
                 },
               ),
@@ -217,6 +307,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 ),
                 onTap: () {
                   Navigator.pop(context);
+                  _clearEntrySelection();
                   context.read<EntriesProvider>().deleteEntry(entry.id);
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text('Entry moved to trash')),
@@ -394,6 +485,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
 
   void _toggleSearch() {
     setState(() {
+      _selectedEntryIds.clear();
       _isSearching = !_isSearching;
       if (!_isSearching) {
         _searchController.clear();
@@ -443,7 +535,19 @@ class _NotebookScreenState extends State<NotebookScreen> {
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
-        title: _isSearching
+        leading: _isSelectingEntries
+            ? IconButton(
+                icon: const Icon(Icons.close),
+                tooltip: 'Clear selection',
+                onPressed: _clearEntrySelection,
+              )
+            : null,
+        title: _isSelectingEntries
+            ? Text(
+                '${_selectedEntryIds.length} selected',
+                style: const TextStyle(fontWeight: FontWeight.w600),
+              )
+            : _isSearching
             ? TextField(
                 controller: _searchController,
                 autofocus: true,
@@ -458,12 +562,55 @@ class _NotebookScreenState extends State<NotebookScreen> {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
         actions: [
-          if (_notebook.entryStyle == NotebookEntryStyles.chat)
+          if (_isSelectingEntries)
+            Consumer<EntriesProvider>(
+              builder: (context, provider, _) {
+                final visibleEntries = _visibleChatEntries(provider);
+                final allVisibleSelected =
+                    visibleEntries.isNotEmpty &&
+                    visibleEntries.every(
+                      (entry) => _selectedEntryIds.contains(entry.id),
+                    );
+                final selectedEntries = visibleEntries
+                    .where((entry) => _selectedEntryIds.contains(entry.id))
+                    .toList();
+
+                return Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      icon: Icon(
+                        allVisibleSelected ? Icons.deselect : Icons.select_all,
+                      ),
+                      tooltip: allVisibleSelected
+                          ? 'Clear selection'
+                          : 'Select visible',
+                      onPressed: allVisibleSelected
+                          ? _clearEntrySelection
+                          : () => _selectVisibleEntries(visibleEntries),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.copy),
+                      tooltip: 'Copy',
+                      onPressed: () => _copySelectedEntries(visibleEntries),
+                    ),
+                    if (selectedEntries.length == 1)
+                      IconButton(
+                        icon: const Icon(Icons.more_vert),
+                        tooltip: 'More',
+                        onPressed: () =>
+                            _showEntryOptions(selectedEntries.first),
+                      ),
+                  ],
+                );
+              },
+            )
+          else if (_notebook.entryStyle == NotebookEntryStyles.chat)
             IconButton(
               icon: Icon(_isSearching ? Icons.close : Icons.search),
               onPressed: _toggleSearch,
             ),
-          if (!_isSearching) ...[
+          if (!_isSearching && !_isSelectingEntries) ...[
             if (_notebook.entryStyle == NotebookEntryStyles.chat) ...[
               IconButton(
                 icon: Icon(
@@ -556,15 +703,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
                     return _buildClassicEditor(notebookColor);
                   }
 
-                  var entries =
-                      _isSearching && _searchController.text.isNotEmpty
-                      ? _searchResults
-                      : provider.entries;
-
-                  // Apply starred filter
-                  if (_showStarredOnly) {
-                    entries = entries.where((e) => e.isStarred).toList();
-                  }
+                  final entries = _visibleChatEntries(provider);
 
                   if (entries.isEmpty) {
                     return _buildEmptyState();
@@ -596,7 +735,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
             if (_notebook.entryStyle == NotebookEntryStyles.chat)
               InputBar(
                 onSend: _handleSend,
-                enabled: !_isSearching,
+                enabled: !_isSearching && !_isSelectingEntries,
                 notebookColor: notebookColor,
               ),
           ],
@@ -721,16 +860,28 @@ class _NotebookScreenState extends State<NotebookScreen> {
         entry: entry,
         showTimestamp: true,
         notebookColor: NotebookColors.fromHex(_notebook.color),
+        isSelected: _selectedEntryIds.contains(entry.id),
         onTap: () {
+          if (_isSelectingEntries) {
+            _toggleEntrySelection(entry);
+            return;
+          }
+
           if (_showStarredOnly || _isSearching) {
             _scrollToEntry(entry.id);
           } else {
             _navigateToEdit(entry);
           }
         },
-        onLongPress: () => _showEntryOptions(entry),
+        onLongPress: () => _toggleEntrySelection(entry),
         onImageTap: entry.hasImage
-            ? () => _showFullScreenImage(entry.imagePath!)
+            ? () {
+                if (_isSelectingEntries) {
+                  _toggleEntrySelection(entry);
+                } else {
+                  _showFullScreenImage(entry.imagePath!);
+                }
+              }
             : null,
       ),
     );

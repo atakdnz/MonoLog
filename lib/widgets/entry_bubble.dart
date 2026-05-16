@@ -10,6 +10,7 @@ class EntryBubble extends StatelessWidget {
   final VoidCallback? onLongPress;
   final VoidCallback? onImageTap;
   final Color? notebookColor;
+  final bool isSelected;
 
   const EntryBubble({
     super.key,
@@ -19,6 +20,7 @@ class EntryBubble extends StatelessWidget {
     this.onLongPress,
     this.onImageTap,
     this.notebookColor,
+    this.isSelected = false,
   });
 
   @override
@@ -38,7 +40,8 @@ class EntryBubble extends StatelessWidget {
         child: GestureDetector(
           onTap: onTap,
           onLongPress: onLongPress,
-          child: Container(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 160),
             constraints: BoxConstraints(
               maxWidth: MediaQuery.of(context).size.width * 0.80,
             ),
@@ -55,11 +58,19 @@ class EntryBubble extends StatelessWidget {
                   ? null
                   : [
                       BoxShadow(
-                        color: bubbleColor.withOpacity(0.15),
-                        blurRadius: 8,
+                        color: bubbleColor.withValues(
+                          alpha: isSelected ? 0.30 : 0.15,
+                        ),
+                        blurRadius: isSelected ? 14 : 8,
                         offset: const Offset(0, 2),
                       ),
                     ],
+              border: isSelected
+                  ? Border.all(
+                      color: isDark ? Colors.white : bubbleColor,
+                      width: 2,
+                    )
+                  : null,
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
@@ -162,18 +173,28 @@ class EntryBubble extends StatelessWidget {
                   // Timestamp
                   if (showTimestamp) ...[
                     const SizedBox(height: 6),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: Text(
-                        TimeUtils.getEntryTime(entry.displayTime),
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          color: isDark
-                              ? Colors.white.withOpacity(0.6)
-                              : const Color(0xFF3b19e6).withOpacity(0.6),
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (isSelected) ...[
+                          Icon(
+                            Icons.check_circle_rounded,
+                            size: 15,
+                            color: isDark ? Colors.white : bubbleColor,
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        Text(
+                          TimeUtils.getEntryTime(entry.displayTime),
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            color: isDark
+                                ? Colors.white.withOpacity(0.6)
+                                : const Color(0xFF3b19e6).withOpacity(0.6),
+                            fontSize: 10,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
-                      ),
+                      ],
                     ),
                   ],
                 ],

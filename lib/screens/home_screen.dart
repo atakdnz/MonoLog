@@ -23,8 +23,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final Set<String> _selectedNotebookIds = {};
   bool get _isSelectingNotebooks => _selectedNotebookIds.isNotEmpty;
-  int? _dragStartedIndex;
-  bool _wasReordered = false;
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +50,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<bool> _authenticateForNotebook(String notebookTitle) async {
     try {
       final localAuth = LocalAuthentication();
-      final canCheck = await localAuth.canCheckBiometrics ||
+      final canCheck =
+          await localAuth.canCheckBiometrics ||
           await localAuth.isDeviceSupported();
       if (!canCheck) return false;
 
@@ -110,11 +110,11 @@ class _HomeScreenState extends State<HomeScreen> {
     if (selected.isEmpty) return;
 
     final provider = context.read<NotebooksProvider>();
-    
+
     switch (action) {
       case 'edit':
         if (selected.length == 1) {
-          _showNotebookOptions(selected.first);
+          _showEditNotebookDialog(selected.first);
         }
         break;
       case 'move':
@@ -135,6 +135,12 @@ class _HomeScreenState extends State<HomeScreen> {
           provider.toggleArchive(n.id);
         }
         _clearSelection();
+        break;
+      case 'lock':
+        if (selected.length == 1) {
+          provider.toggleLock(selected.first.id);
+          _clearSelection();
+        }
         break;
       case 'delete':
         _showBatchDeleteConfirmation(selected);
@@ -356,89 +362,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showNotebookOptions(Notebook notebook) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: Icon(
-                  notebook.isPinned ? Icons.push_pin_outlined : Icons.push_pin,
-                ),
-                title: Text(notebook.isPinned ? 'Unpin' : 'Pin'),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.read<NotebooksProvider>().togglePin(notebook.id);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Edit'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showEditNotebookDialog(notebook);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.drive_file_move_outline),
-                title: const Text('Move to Folder'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showMoveToFolderDialog(notebook);
-                },
-              ),
-              ListTile(
-                leading: Icon(
-                  notebook.isArchived
-                      ? Icons.unarchive_outlined
-                      : Icons.archive_outlined,
-                ),
-                title: Text(notebook.isArchived ? 'Unarchive' : 'Archive'),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.read<NotebooksProvider>().toggleArchive(notebook.id);
-                },
-              ),
-              ListTile(
-                leading: Icon(
-                  notebook.isLocked ? Icons.lock_open : Icons.lock_outline,
-                ),
-                title: Text(notebook.isLocked ? 'Remove Lock' : 'Add Lock'),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.read<NotebooksProvider>().toggleLock(notebook.id);
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: Icon(
-                  Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                title: Text(
-                  'Delete',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteConfirmation(notebook);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
   void _showMoveToFolderDialog(Notebook notebook) {
     final foldersProvider = context.read<FoldersProvider>();
 
@@ -473,16 +396,15 @@ class _HomeScreenState extends State<HomeScreen> {
                   ? const Icon(Icons.check, color: Colors.green)
                   : null,
               onTap: () {
-                context
-                    .read<FoldersProvider>()
-                    .moveNotebookToFolder(notebook.id, null);
+                context.read<FoldersProvider>().moveNotebookToFolder(
+                  notebook.id,
+                  null,
+                );
                 context.read<NotebooksProvider>().loadNotebooks();
                 Navigator.pop(context);
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(
-                      '"${notebook.title}" moved to main list',
-                    ),
+                    content: Text('"${notebook.title}" moved to main list'),
                   ),
                 );
               },
@@ -507,9 +429,10 @@ class _HomeScreenState extends State<HomeScreen> {
                     ? const Icon(Icons.check, color: Colors.green)
                     : null,
                 onTap: () {
-                  context
-                      .read<FoldersProvider>()
-                      .moveNotebookToFolder(notebook.id, folder.id);
+                  context.read<FoldersProvider>().moveNotebookToFolder(
+                    notebook.id,
+                    folder.id,
+                  );
                   context.read<NotebooksProvider>().loadNotebooks();
                   Navigator.pop(context);
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -561,9 +484,10 @@ class _HomeScreenState extends State<HomeScreen> {
               title: const Text('No Folder (Main List)'),
               onTap: () {
                 for (var n in notebooks) {
-                  context
-                      .read<FoldersProvider>()
-                      .moveNotebookToFolder(n.id, null);
+                  context.read<FoldersProvider>().moveNotebookToFolder(
+                    n.id,
+                    null,
+                  );
                 }
                 context.read<NotebooksProvider>().loadNotebooks();
                 Navigator.pop(context);
@@ -595,9 +519,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 title: Text(folder.name),
                 onTap: () {
                   for (var n in notebooks) {
-                    context
-                        .read<FoldersProvider>()
-                        .moveNotebookToFolder(n.id, folder.id);
+                    context.read<FoldersProvider>().moveNotebookToFolder(
+                      n.id,
+                      folder.id,
+                    );
                   }
                   context.read<NotebooksProvider>().loadNotebooks();
                   Navigator.pop(context);
@@ -723,35 +648,6 @@ class _HomeScreenState extends State<HomeScreen> {
                       );
                     }).toList(),
                   ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Icon(
-                        notebook.isLocked ? Icons.lock : Icons.lock_outline,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Lock Notebook',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Spacer(),
-                      Switch(
-                        value: notebook.isLocked,
-                        onChanged: (value) async {
-                          await context.read<NotebooksProvider>().toggleLock(notebook.id);
-                          final updatedNotebook = await context.read<NotebooksProvider>().getNotebook(notebook.id);
-                          if (updatedNotebook != null) {
-                            notebook = updatedNotebook;
-                            setModalState(() {});
-                          }
-                        },
-                      ),
-                    ],
-                  ),
                   const SizedBox(height: 24),
                   SizedBox(
                     width: double.infinity,
@@ -788,34 +684,6 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _showDeleteConfirmation(Notebook notebook) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Notebook?'),
-        content: Text(
-          '"${notebook.title}" will be moved to trash. You can restore it within 30 days.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.read<NotebooksProvider>().deleteNotebook(notebook.id);
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -842,10 +710,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onSelected: _handleBatchAction,
                     itemBuilder: (context) => [
                       if (_selectedNotebookIds.length == 1)
-                        const PopupMenuItem(
-                          value: 'edit',
-                          child: Text('Edit'),
-                        ),
+                        const PopupMenuItem(value: 'edit', child: Text('Edit')),
                       const PopupMenuItem(
                         value: 'move',
                         child: Text('Move to Folder'),
@@ -858,6 +723,15 @@ class _HomeScreenState extends State<HomeScreen> {
                         value: 'archive',
                         child: Text('Archive/Unarchive'),
                       ),
+                      if (_selectedNotebookIds.length == 1)
+                        PopupMenuItem(
+                          value: 'lock',
+                          child: Text(
+                            _getSelectedNotebooks().first.isLocked
+                                ? 'Remove Lock'
+                                : 'Add Lock',
+                          ),
+                        ),
                       const PopupMenuItem(
                         value: 'delete',
                         child: Text('Delete'),
@@ -903,56 +777,56 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
         body: Consumer<NotebooksProvider>(
-        builder: (context, provider, _) {
-          if (provider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
+          builder: (context, provider, _) {
+            if (provider.isLoading) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-          final hasNotebooks =
-              provider.pinnedNotebooks.isNotEmpty ||
-              provider.regularNotebooks.isNotEmpty;
+            final hasNotebooks =
+                provider.pinnedNotebooks.isNotEmpty ||
+                provider.regularNotebooks.isNotEmpty;
 
-          if (!hasNotebooks) {
-            return _buildEmptyState();
-          }
+            if (!hasNotebooks) {
+              return _buildEmptyState();
+            }
 
-          return RefreshIndicator(
-            onRefresh: provider.loadNotebooks,
-            child: ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                // Pinned section
-                if (provider.pinnedNotebooks.isNotEmpty) ...[
-                  _buildSectionHeader('PINNED'),
-                  const SizedBox(height: 12),
-                  _buildNotebookGrid(provider.pinnedNotebooks),
-                  const SizedBox(height: 24),
+            return RefreshIndicator(
+              onRefresh: provider.loadNotebooks,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  // Pinned section
+                  if (provider.pinnedNotebooks.isNotEmpty) ...[
+                    _buildSectionHeader('PINNED'),
+                    const SizedBox(height: 12),
+                    _buildNotebookGrid(provider.pinnedNotebooks),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Regular notebooks section
+                  if (provider.regularNotebooks.isNotEmpty) ...[
+                    _buildSectionHeader('NOTEBOOKS'),
+                    const SizedBox(height: 12),
+                    _buildNotebookGrid(provider.regularNotebooks),
+                    const SizedBox(height: 24),
+                  ],
+
+                  // Bottom padding for FAB
+                  const SizedBox(height: 80),
                 ],
-
-                // Regular notebooks section
-                if (provider.regularNotebooks.isNotEmpty) ...[
-                  _buildSectionHeader('NOTEBOOKS'),
-                  const SizedBox(height: 12),
-                  _buildNotebookGrid(provider.regularNotebooks),
-                  const SizedBox(height: 24),
-                ],
-
-                // Bottom padding for FAB
-                const SizedBox(height: 80),
-              ],
-            ),
-          );
-        },
-      ),
-      floatingActionButton: _isSelectingNotebooks
-          ? null
-          : FloatingActionButton(
-              onPressed: _showCreateNotebookDialog,
-              backgroundColor: const Color(0xFF3b19e6),
-              foregroundColor: Colors.white,
-              elevation: 4,
-              child: const Icon(Icons.add),
-            ),
+              ),
+            );
+          },
+        ),
+        floatingActionButton: _isSelectingNotebooks
+            ? null
+            : FloatingActionButton(
+                onPressed: _showCreateNotebookDialog,
+                backgroundColor: const Color(0xFF3b19e6),
+                foregroundColor: Colors.white,
+                elevation: 4,
+                child: const Icon(Icons.add),
+              ),
       ),
     );
   }
@@ -1025,19 +899,17 @@ class _HomeScreenState extends State<HomeScreen> {
         );
       },
       onReorder: (oldIndex, newIndex) {
-        _wasReordered = true;
         if (oldIndex == newIndex) {
           return;
         }
-        // If it was actually moved, we clear the selection to match the user intent of moving.
         setState(() {
           _selectedNotebookIds.remove(notebooks[oldIndex].id);
         });
         context.read<NotebooksProvider>().reorderNotebooks(
-              notebooks,
-              oldIndex,
-              newIndex,
-            );
+          notebooks,
+          oldIndex,
+          newIndex,
+        );
       },
     );
   }

@@ -445,7 +445,7 @@ class _NotebookScreenState extends State<NotebookScreen> {
     _clearEntrySelection();
   }
 
-  void _showEntryOptions(Entry entry) {
+  void _showEntryOptions(Entry entry, {bool includePrimaryActions = true}) {
     showModalBottomSheet(
       context: context,
       backgroundColor: Theme.of(context).colorScheme.surface,
@@ -458,28 +458,30 @@ class _NotebookScreenState extends State<NotebookScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              ListTile(
-                leading: Icon(
-                  entry.isStarred ? Icons.star : Icons.star_outline,
-                  color: entry.isStarred ? Colors.amber[600] : null,
+              if (includePrimaryActions)
+                ListTile(
+                  leading: Icon(
+                    entry.isStarred ? Icons.star : Icons.star_outline,
+                    color: entry.isStarred ? Colors.amber[600] : null,
+                  ),
+                  title: Text(entry.isStarred ? 'Remove Star' : 'Add Star'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _clearEntrySelection();
+                    context.read<EntriesProvider>().toggleStar(entry.id);
+                  },
                 ),
-                title: Text(entry.isStarred ? 'Remove Star' : 'Add Star'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _clearEntrySelection();
-                  context.read<EntriesProvider>().toggleStar(entry.id);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Edit'),
-                onTap: () {
-                  Navigator.pop(context);
-                  _clearEntrySelection();
-                  _navigateToEdit(entry);
-                },
-              ),
-              if (entry.hasImage)
+              if (includePrimaryActions)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Edit'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _clearEntrySelection();
+                    _navigateToEdit(entry);
+                  },
+                ),
+              if (includePrimaryActions && entry.hasImage)
                 ListTile(
                   leading: const Icon(Icons.draw_outlined),
                   title: const Text('Edit Drawing'),
@@ -909,8 +911,10 @@ class _NotebookScreenState extends State<NotebookScreen> {
                         IconButton(
                           icon: const Icon(Icons.more_vert),
                           tooltip: 'More',
-                          onPressed: () =>
-                              _showEntryOptions(selectedEntries.first),
+                          onPressed: () => _showEntryOptions(
+                            selectedEntries.first,
+                            includePrimaryActions: false,
+                          ),
                         ),
                     ],
                   );
@@ -1685,39 +1689,6 @@ class _NotebookScreenState extends State<NotebookScreen> {
                         ),
                       );
                     }).toList(),
-                  ),
-                  const SizedBox(height: 20),
-                  Row(
-                    children: [
-                      Icon(
-                        _notebook.isLocked ? Icons.lock : Icons.lock_outline,
-                        size: 20,
-                        color: Theme.of(context).colorScheme.onSurface,
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        'Lock Notebook',
-                        style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const Spacer(),
-                      Switch(
-                        value: _notebook.isLocked,
-                        onChanged: (value) async {
-                          await context.read<NotebooksProvider>().toggleLock(
-                            _notebook.id,
-                          );
-                          final updatedNotebook = await context
-                              .read<NotebooksProvider>()
-                              .getNotebook(_notebook.id);
-                          if (updatedNotebook != null && mounted) {
-                            setState(() => _notebook = updatedNotebook);
-                            setModalState(() {});
-                          }
-                        },
-                      ),
-                    ],
                   ),
                   const SizedBox(height: 24),
                   SizedBox(

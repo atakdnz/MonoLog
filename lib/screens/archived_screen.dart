@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:reorderable_grid_view/reorderable_grid_view.dart';
 import '../database/database_helper.dart';
@@ -115,79 +114,6 @@ class _ArchivedScreenState extends State<ArchivedScreen> {
     );
   }
 
-  void _showNotebookOptions(Notebook notebook) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Theme.of(context).colorScheme.surface,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              ListTile(
-                leading: const Icon(Icons.unarchive_outlined),
-                title: const Text('Unarchive'),
-                onTap: () {
-                  Navigator.pop(context);
-                  context.read<NotebooksProvider>().toggleArchive(notebook.id);
-                  _loadArchived();
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: Icon(
-                  Icons.delete_outline,
-                  color: Theme.of(context).colorScheme.error,
-                ),
-                title: Text(
-                  'Delete',
-                  style: TextStyle(color: Theme.of(context).colorScheme.error),
-                ),
-                onTap: () {
-                  Navigator.pop(context);
-                  _showDeleteConfirmation(notebook);
-                },
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(Notebook notebook) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Notebook?'),
-        content: Text(
-          '"${notebook.title}" will be moved to trash. You can restore it within 30 days.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              context.read<NotebooksProvider>().deleteNotebook(notebook.id);
-              _loadArchived();
-            },
-            style: TextButton.styleFrom(
-              foregroundColor: Theme.of(context).colorScheme.error,
-            ),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -233,17 +159,17 @@ class _ArchivedScreenState extends State<ArchivedScreen> {
         body: _isLoading
             ? const Center(child: CircularProgressIndicator())
             : _archivedNotebooks.isEmpty
-                ? _buildEmptyState()
-                : RefreshIndicator(
-                    onRefresh: _loadArchived,
-                    child: ListView(
-                      padding: const EdgeInsets.all(16),
-                      children: [
-                        _buildNotebookGrid(_archivedNotebooks),
-                        const SizedBox(height: 80),
-                      ],
-                    ),
-                  ),
+            ? _buildEmptyState()
+            : RefreshIndicator(
+                onRefresh: _loadArchived,
+                child: ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildNotebookGrid(_archivedNotebooks),
+                    const SizedBox(height: 80),
+                  ],
+                ),
+              ),
       ),
     );
   }
@@ -303,7 +229,6 @@ class _ArchivedScreenState extends State<ArchivedScreen> {
               _navigateToNotebook(notebook);
             }
           },
-          onLongPressMenu: () => _showNotebookOptions(notebook),
         );
       },
       onReorder: (oldIndex, newIndex) {},

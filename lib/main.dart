@@ -123,7 +123,13 @@ class MonoLogApp extends StatelessWidget {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: colorScheme.onSurface,
+        backgroundColor: const Color(0xFF111827),
+        contentTextStyle: GoogleFonts.inter(
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
+        actionTextColor: const Color(0xFFC4B5FD),
+        closeIconColor: Colors.white,
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -199,7 +205,13 @@ class MonoLogApp extends StatelessWidget {
       snackBarTheme: SnackBarThemeData(
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        backgroundColor: surfaceContainer,
+        backgroundColor: const Color(0xFF3A315F),
+        contentTextStyle: GoogleFonts.inter(
+          color: Colors.white,
+          fontWeight: FontWeight.w500,
+        ),
+        actionTextColor: const Color(0xFFC4B5FD),
+        closeIconColor: Colors.white,
       ),
       dialogTheme: DialogThemeData(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),

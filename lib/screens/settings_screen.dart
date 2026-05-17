@@ -7,6 +7,8 @@ import '../services/import_service.dart';
 import '../utils/constants.dart';
 import 'trash_screen.dart';
 
+enum _ExportDataChoice { plainZip, encryptedBackup }
+
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
@@ -122,9 +124,7 @@ class SettingsScreen extends StatelessWidget {
 
                 return _buildSettingsItem(
                   context: context,
-                  icon: isDarkModeEnabled
-                      ? Icons.dark_mode
-                      : Icons.light_mode,
+                  icon: isDarkModeEnabled ? Icons.dark_mode : Icons.light_mode,
                   iconBg: iconBg,
                   title: isDarkModeEnabled ? 'Dark Mode' : 'Light Mode',
                   subtitle: 'Switch between Light and Dark',
@@ -392,6 +392,17 @@ class SettingsScreen extends StatelessWidget {
   }
 
   Future<void> _exportData(BuildContext context) async {
+    final choice = await _showExportChoiceDialog(context);
+    if (!context.mounted) return;
+    if (choice == null) return;
+
+    String? password;
+    if (choice == _ExportDataChoice.encryptedBackup) {
+      password = await _showCreateBackupPasswordDialog(context);
+      if (!context.mounted) return;
+      if (password == null) return;
+    }
+
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -408,14 +419,21 @@ class SettingsScreen extends StatelessWidget {
 
     try {
       final exportService = ExportService();
-      final filePath = await exportService.exportAllData();
+      final filePath = choice == _ExportDataChoice.encryptedBackup
+          ? await exportService.exportAllDataEncrypted(password: password!)
+          : await exportService.exportAllData();
 
+      if (!context.mounted) return;
       Navigator.pop(context); // Close loading dialog
 
       if (filePath != null) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text('Data exported successfully'),
+            content: Text(
+              choice == _ExportDataChoice.encryptedBackup
+                  ? 'Encrypted backup exported successfully'
+                  : 'Data exported successfully',
+            ),
             action: SnackBarAction(
               label: 'Share',
               onPressed: () => exportService.shareExport(filePath),
@@ -428,6 +446,7 @@ class SettingsScreen extends StatelessWidget {
         ).showSnackBar(const SnackBar(content: Text('Export failed')));
       }
     } catch (e) {
+      if (!context.mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(
         context,
@@ -461,6 +480,7 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
 
+    if (!context.mounted) return;
     if (mergeOption == null) return;
 
     // Show loading
@@ -479,25 +499,176 @@ class SettingsScreen extends StatelessWidget {
     );
 
     try {
-      final success = await importService.importData(merge: mergeOption);
+      final result = await importService.importData(
+        merge: mergeOption,
+        encryptedPasswordProvider: () => _showImportPasswordDialog(context),
+      );
 
+      if (!context.mounted) return;
       Navigator.pop(context); // Close loading dialog
 
-      if (success) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Data imported successfully')),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Import cancelled or failed')),
-        );
-      }
+      final message = switch (result) {
+        ImportDataResult.success => 'Data imported successfully',
+        ImportDataResult.cancelled => 'Import cancelled',
+        ImportDataResult.invalidPassword =>
+          'Import failed or password is incorrect',
+        ImportDataResult.passwordRequired =>
+          'Password is required for encrypted backups',
+        ImportDataResult.failed => 'Import cancelled or failed',
+      };
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
     } catch (e) {
+      if (!context.mounted) return;
       Navigator.pop(context);
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
     }
+  }
+
+  Future<_ExportDataChoice?> _showExportChoiceDialog(
+    BuildContext context,
+  ) async {
+    return showDialog<_ExportDataChoice>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Export Data'),
+        content: const Text('Choose a backup format.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, _ExportDataChoice.plainZip),
+            child: const Text('Plain ZIP'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(context, _ExportDataChoice.encryptedBackup),
+            child: const Text('Encrypted Backup'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _showCreateBackupPasswordDialog(BuildContext context) async {
+    final passwordController = TextEditingController();
+    final confirmController = TextEditingController();
+    String? errorText;
+
+    final password = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Encrypt Backup'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Choose a password for this backup. If you forget it, the backup cannot be recovered.',
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: passwordController,
+                autofocus: true,
+                obscureText: true,
+                decoration: const InputDecoration(
+                  labelText: 'Password',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: confirmController,
+                obscureText: true,
+                decoration: InputDecoration(
+                  labelText: 'Confirm password',
+                  border: const OutlineInputBorder(),
+                  errorText: errorText,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final password = passwordController.text;
+                final confirm = confirmController.text;
+                if (password.isEmpty) {
+                  setState(() => errorText = 'Enter a password');
+                  return;
+                }
+                if (password != confirm) {
+                  setState(() => errorText = 'Passwords do not match');
+                  return;
+                }
+                Navigator.pop(context, password);
+              },
+              child: const Text('Export'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    passwordController.dispose();
+    confirmController.dispose();
+    return password;
+  }
+
+  Future<String?> _showImportPasswordDialog(BuildContext context) async {
+    final passwordController = TextEditingController();
+    String? errorText;
+
+    final password = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('Encrypted Backup'),
+          content: TextField(
+            controller: passwordController,
+            autofocus: true,
+            obscureText: true,
+            decoration: InputDecoration(
+              labelText: 'Password',
+              border: const OutlineInputBorder(),
+              errorText: errorText,
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () {
+                final password = passwordController.text;
+                if (password.isEmpty) {
+                  setState(() => errorText = 'Enter the backup password');
+                  return;
+                }
+                Navigator.pop(context, password);
+              },
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    passwordController.dispose();
+    return password;
   }
 
   Future<void> _importSingleNotebook(BuildContext context) async {

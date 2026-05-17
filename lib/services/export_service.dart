@@ -8,20 +8,46 @@ import 'package:share_plus/share_plus.dart';
 import '../database/database_helper.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
+import 'backup_encryption_service.dart';
 import '../utils/constants.dart';
 import '../utils/time_utils.dart';
 
 class ExportService {
   final DatabaseHelper _db = DatabaseHelper();
+  final BackupEncryptionService _encryptionService = BackupEncryptionService();
 
   /// Export all data to a ZIP file
   Future<String?> exportAllData() async {
     try {
       final data = await _db.getAllDataForExport();
       final folders = await _db.getFoldersForExport();
-      return await _createExportZip(data, folders: folders);
+      final zipData = await _createExportZipBytes(data, folders: folders);
+      if (zipData == null) return null;
+      return await _writeBackupFile(zipData, extension: '.zip');
     } catch (e) {
       debugPrint('Export failed: $e');
+      return null;
+    }
+  }
+
+  /// Export all data to a password-protected MonoLog backup file
+  Future<String?> exportAllDataEncrypted({required String password}) async {
+    try {
+      final data = await _db.getAllDataForExport();
+      final folders = await _db.getFoldersForExport();
+      final zipData = await _createExportZipBytes(data, folders: folders);
+      if (zipData == null) return null;
+
+      final encryptedData = await _encryptionService.encryptZipBytes(
+        zipData,
+        password: password,
+      );
+      return await _writeBackupFile(
+        encryptedData,
+        extension: BackupEncryptionService.fileExtension,
+      );
+    } catch (e) {
+      debugPrint('Encrypted export failed: $e');
       return null;
     }
   }
@@ -31,7 +57,9 @@ class ExportService {
     try {
       final data = await _db.getNotebookDataForExport(notebookId);
       if (data == null) return null;
-      return await _createExportZip([data]);
+      final zipData = await _createExportZipBytes([data]);
+      if (zipData == null) return null;
+      return await _writeBackupFile(zipData, extension: '.zip');
     } catch (e) {
       debugPrint('Export failed: $e');
       return null;
@@ -46,7 +74,7 @@ class ExportService {
         .substring(0, input.length > 30 ? 30 : input.length);
   }
 
-  Future<String?> _createExportZip(
+  Future<List<int>?> _createExportZipBytes(
     List<Map<String, dynamic>> notebooksData, {
     List<Map<String, dynamic>>? folders,
   }) async {
@@ -159,22 +187,27 @@ class ExportService {
       final zipData = ZipEncoder().encode(archive);
       if (zipData == null) return null;
 
-      // Save to file
-      final tempDir = await getTemporaryDirectory();
-      final timestamp = DateTime.now()
-          .toIso8601String()
-          .replaceAll(':', '-')
-          .split('.')
-          .first;
-      final zipPath = p.join(tempDir.path, 'monolog_backup_$timestamp.zip');
-      final zipFile = File(zipPath);
-      await zipFile.writeAsBytes(zipData);
-
-      return zipPath;
+      return zipData;
     } catch (e) {
       debugPrint('Error creating ZIP: $e');
       return null;
     }
+  }
+
+  Future<String> _writeBackupFile(
+    List<int> bytes, {
+    required String extension,
+  }) async {
+    final tempDir = await getTemporaryDirectory();
+    final timestamp = DateTime.now()
+        .toIso8601String()
+        .replaceAll(':', '-')
+        .split('.')
+        .first;
+    final path = p.join(tempDir.path, 'monolog_backup_$timestamp$extension');
+    final file = File(path);
+    await file.writeAsBytes(bytes);
+    return path;
   }
 
   /// Share the exported file

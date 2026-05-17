@@ -2,164 +2,214 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:archive/archive.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import '../database/database_helper.dart';
 import '../models/notebook.dart';
 import '../models/entry.dart';
 import '../models/folder.dart';
+import 'backup_encryption_service.dart';
+
+enum ImportDataResult {
+  success,
+  cancelled,
+  failed,
+  passwordRequired,
+  invalidPassword,
+}
 
 class ImportService {
   final DatabaseHelper _db = DatabaseHelper();
+  final BackupEncryptionService _encryptionService = BackupEncryptionService();
 
   /// Import data from a ZIP file
   /// [merge] - If true, merge with existing data. If false, replace all data.
-  Future<bool> importData({required bool merge}) async {
+  Future<ImportDataResult> importData({
+    required bool merge,
+    Future<String?> Function()? encryptedPasswordProvider,
+  }) async {
     try {
       // Pick file
-      final result = await FilePicker.platform.pickFiles(
-        type: FileType.custom,
-        allowedExtensions: ['zip'],
-      );
+      final result = await FilePicker.platform.pickFiles(type: FileType.any);
 
-      if (result == null || result.files.isEmpty) return false;
+      if (result == null || result.files.isEmpty) {
+        return ImportDataResult.cancelled;
+      }
 
       final filePath = result.files.first.path;
-      if (filePath == null) return false;
+      if (filePath == null) return ImportDataResult.cancelled;
 
-      // Read ZIP file
       final bytes = await File(filePath).readAsBytes();
-      final archive = ZipDecoder().decodeBytes(bytes);
+      final extension = p.extension(filePath).toLowerCase();
+      final isEncrypted =
+          BackupEncryptionService.isEncryptedBackup(bytes) ||
+          extension == BackupEncryptionService.fileExtension;
 
-      // Find data.json
-      final dataFile = archive.files.firstWhere(
-        (f) => f.name == 'data.json',
-        orElse: () => throw Exception('Invalid backup: data.json not found'),
-      );
-
-      // Parse JSON
-      final jsonString = utf8.decode(dataFile.content as List<int>);
-      final jsonData = json.decode(jsonString) as Map<String, dynamic>;
-
-      // Get images directory
-      final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory(p.join(appDir.path, 'images'));
-      if (!await imagesDir.exists()) {
-        await imagesDir.create(recursive: true);
+      if (!isEncrypted && extension != '.zip') {
+        return ImportDataResult.failed;
       }
 
-      // Extract images
-      final imageMap = <String, String>{}; // archive filename -> local path
-      for (final file in archive.files) {
-        if (file.name.startsWith('images/') && !file.isFile) continue;
-        if (file.name.startsWith('images/') && file.isFile) {
-          final imageFilename = p.basename(file.name);
-          final localFilename =
-              '${DateTime.now().millisecondsSinceEpoch}_$imageFilename';
-          final localPath = p.join(imagesDir.path, localFilename);
+      List<int> zipBytes = bytes;
+      if (isEncrypted) {
+        if (encryptedPasswordProvider == null) {
+          return ImportDataResult.passwordRequired;
+        }
 
-          final imageFile = File(localPath);
-          await imageFile.writeAsBytes(file.content as List<int>);
+        final password = await encryptedPasswordProvider();
+        if (password == null) return ImportDataResult.cancelled;
 
-          imageMap[imageFilename] = localPath;
+        try {
+          zipBytes = await _encryptionService.decryptZipBytes(
+            bytes,
+            password: password,
+          );
+        } on BackupEncryptionException {
+          return ImportDataResult.invalidPassword;
         }
       }
 
-      // Import notebooks and entries
-      final notebooksJson = jsonData['notebooks'] as List;
-      final foldersJson = jsonData['folders'] as List?;
+      final archive = ZipDecoder().decodeBytes(zipBytes);
+      await _importFullArchive(archive, merge: merge);
 
-      // Import folders first
-      final folderIdMap = <String, String>{}; // old id -> new id
-      if (foldersJson != null) {
-        for (final folderJson in foldersJson) {
-          final folderData = folderJson as Map<String, dynamic>;
-          final folder = Folder.fromJson(folderData);
-
-          final exists = await _db.getFolder(folder.id) != null;
-          if (exists && merge) {
-            folderIdMap[folder.id] = folder.id;
-            continue;
-          }
-
-          await _db.insertFolder(folder);
-          folderIdMap[folder.id] = folder.id;
-        }
-      }
-
-      for (final notebookJson in notebooksJson) {
-        final notebookData = notebookJson as Map<String, dynamic>;
-        final notebook = Notebook.fromJson(notebookData);
-
-        // Map folder_id if it exists
-        String? mappedFolderId = notebook.folderId;
-        if (mappedFolderId != null && folderIdMap.containsKey(mappedFolderId)) {
-          mappedFolderId = folderIdMap[mappedFolderId];
-        }
-
-        // Check if notebook exists
-        final exists = await _db.notebookExists(notebook.id);
-
-        if (exists && merge) {
-          // Skip existing notebook in merge mode
-          continue;
-        } else if (exists && !merge) {
-          // Delete existing notebook in replace mode
-          await _db.permanentlyDeleteNotebook(notebook.id);
-        }
-
-        // Insert notebook with mapped folder_id
-        final notebookToInsert = mappedFolderId != null
-            ? notebook.copyWith(folderId: mappedFolderId)
-            : notebook;
-        await _db.insertNotebook(notebookToInsert);
-
-        // Import entries
-        final entriesJson = notebookData['entries'] as List?;
-        if (entriesJson != null) {
-          for (final entryJson in entriesJson) {
-            final entryData = entryJson as Map<String, dynamic>;
-
-            // Handle image path
-            String? imagePath;
-            final imageFilename = entryData['image_filename'] as String?;
-            if (imageFilename != null && imageMap.containsKey(imageFilename)) {
-              imagePath = imageMap[imageFilename];
-            }
-            String? annotationBaseImagePath;
-            final annotationBaseImageFilename =
-                entryData['annotation_base_image_filename'] as String?;
-            if (annotationBaseImageFilename != null &&
-                imageMap.containsKey(annotationBaseImageFilename)) {
-              annotationBaseImagePath = imageMap[annotationBaseImageFilename];
-            }
-
-            final entry = Entry(
-              id: entryData['id'] as String,
-              notebookId: notebook.id,
-              content: entryData['content'] as String?,
-              imagePath: imagePath,
-              annotationBaseImagePath: annotationBaseImagePath,
-              annotationStrokes: entryData['annotation_strokes'] as String?,
-              displayTime: DateTime.parse(entryData['display_time'] as String),
-              createdAt: DateTime.parse(entryData['created_at'] as String),
-              isStarred: entryData['is_starred'] as bool? ?? false,
-            );
-
-            // Check if entry exists
-            final entryExists = await _db.entryExists(entry.id);
-            if (!entryExists) {
-              await _db.insertEntry(entry);
-            }
-          }
-        }
-      }
-
-      return true;
+      return ImportDataResult.success;
     } catch (e) {
-      print('Import failed: $e');
-      return false;
+      debugPrint('Import failed: $e');
+      return ImportDataResult.failed;
     }
+  }
+
+  Future<void> _importFullArchive(
+    Archive archive, {
+    required bool merge,
+  }) async {
+    final jsonData = _readArchiveJson(archive);
+    final imageMap = await _extractImages(archive);
+
+    // Import notebooks and entries
+    final notebooksJson = jsonData['notebooks'] as List;
+    final foldersJson = jsonData['folders'] as List?;
+
+    // Import folders first
+    final folderIdMap = <String, String>{}; // old id -> new id
+    if (foldersJson != null) {
+      for (final folderJson in foldersJson) {
+        final folderData = folderJson as Map<String, dynamic>;
+        final folder = Folder.fromJson(folderData);
+
+        final exists = await _db.getFolder(folder.id) != null;
+        if (exists && merge) {
+          folderIdMap[folder.id] = folder.id;
+          continue;
+        }
+
+        await _db.insertFolder(folder);
+        folderIdMap[folder.id] = folder.id;
+      }
+    }
+
+    for (final notebookJson in notebooksJson) {
+      final notebookData = notebookJson as Map<String, dynamic>;
+      final notebook = Notebook.fromJson(notebookData);
+
+      // Map folder_id if it exists
+      String? mappedFolderId = notebook.folderId;
+      if (mappedFolderId != null && folderIdMap.containsKey(mappedFolderId)) {
+        mappedFolderId = folderIdMap[mappedFolderId];
+      }
+
+      // Check if notebook exists
+      final exists = await _db.notebookExists(notebook.id);
+
+      if (exists && merge) {
+        // Skip existing notebook in merge mode
+        continue;
+      } else if (exists && !merge) {
+        // Delete existing notebook in replace mode
+        await _db.permanentlyDeleteNotebook(notebook.id);
+      }
+
+      // Insert notebook with mapped folder_id
+      final notebookToInsert = mappedFolderId != null
+          ? notebook.copyWith(folderId: mappedFolderId)
+          : notebook;
+      await _db.insertNotebook(notebookToInsert);
+
+      // Import entries
+      final entriesJson = notebookData['entries'] as List?;
+      if (entriesJson != null) {
+        for (final entryJson in entriesJson) {
+          final entryData = entryJson as Map<String, dynamic>;
+
+          // Handle image path
+          String? imagePath;
+          final imageFilename = entryData['image_filename'] as String?;
+          if (imageFilename != null && imageMap.containsKey(imageFilename)) {
+            imagePath = imageMap[imageFilename];
+          }
+          String? annotationBaseImagePath;
+          final annotationBaseImageFilename =
+              entryData['annotation_base_image_filename'] as String?;
+          if (annotationBaseImageFilename != null &&
+              imageMap.containsKey(annotationBaseImageFilename)) {
+            annotationBaseImagePath = imageMap[annotationBaseImageFilename];
+          }
+
+          final entry = Entry(
+            id: entryData['id'] as String,
+            notebookId: notebook.id,
+            content: entryData['content'] as String?,
+            imagePath: imagePath,
+            annotationBaseImagePath: annotationBaseImagePath,
+            annotationStrokes: entryData['annotation_strokes'] as String?,
+            displayTime: DateTime.parse(entryData['display_time'] as String),
+            createdAt: DateTime.parse(entryData['created_at'] as String),
+            isStarred: entryData['is_starred'] as bool? ?? false,
+          );
+
+          // Check if entry exists
+          final entryExists = await _db.entryExists(entry.id);
+          if (!entryExists) {
+            await _db.insertEntry(entry);
+          }
+        }
+      }
+    }
+  }
+
+  Map<String, dynamic> _readArchiveJson(Archive archive) {
+    final dataFile = archive.files.firstWhere(
+      (f) => f.name == 'data.json',
+      orElse: () => throw Exception('Invalid backup: data.json not found'),
+    );
+    final jsonString = utf8.decode(dataFile.content as List<int>);
+    return json.decode(jsonString) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, String>> _extractImages(Archive archive) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final imagesDir = Directory(p.join(appDir.path, 'images'));
+    if (!await imagesDir.exists()) {
+      await imagesDir.create(recursive: true);
+    }
+
+    final imageMap = <String, String>{}; // archive filename -> local path
+    for (final file in archive.files) {
+      if (file.name.startsWith('images/') && !file.isFile) continue;
+      if (file.name.startsWith('images/') && file.isFile) {
+        final imageFilename = p.basename(file.name);
+        final localFilename =
+            '${DateTime.now().millisecondsSinceEpoch}_$imageFilename';
+        final localPath = p.join(imagesDir.path, localFilename);
+
+        final imageFile = File(localPath);
+        await imageFile.writeAsBytes(file.content as List<int>);
+
+        imageMap[imageFilename] = localPath;
+      }
+    }
+
+    return imageMap;
   }
 
   /// Import a single notebook from ZIP as a new notebook
@@ -266,7 +316,7 @@ class ImportService {
 
       return true;
     } catch (e) {
-      print('Import single notebook failed: $e');
+      debugPrint('Import single notebook failed: $e');
       return false;
     }
   }
@@ -364,7 +414,7 @@ class ImportService {
 
       return importedCount > 0;
     } catch (e) {
-      print('Import merge failed: $e');
+      debugPrint('Import merge failed: $e');
       return false;
     }
   }

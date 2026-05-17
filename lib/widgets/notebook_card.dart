@@ -30,6 +30,7 @@ class NotebookCard extends StatefulWidget {
 
 class _NotebookCardState extends State<NotebookCard> {
   Entry? _previewEntry;
+  DateTime? _activityTime;
   bool _isLoadingPreview = true;
   Timer? _selectionTimer;
 
@@ -61,10 +62,14 @@ class _NotebookCardState extends State<NotebookCard> {
   Future<void> _loadPreview() async {
     setState(() => _isLoadingPreview = true);
     final provider = context.read<NotebooksProvider>();
-    final entry = await provider.getPreviewEntry(widget.notebook.id);
+    final results = await Future.wait([
+      provider.getPreviewEntry(widget.notebook.id),
+      provider.getActivityTime(widget.notebook),
+    ]);
     if (mounted) {
       setState(() {
-        _previewEntry = entry;
+        _previewEntry = results[0] as Entry?;
+        _activityTime = results[1] as DateTime?;
         _isLoadingPreview = false;
       });
     }
@@ -226,7 +231,7 @@ class _NotebookCardState extends State<NotebookCard> {
                                 ),
                                 child: Text(
                                   TimeUtils.getRelativeTime(
-                                    _previewEntry!.displayTime,
+                                    _activityTime ?? _previewEntry!.displayTime,
                                   ),
                                   style: theme.textTheme.labelSmall?.copyWith(
                                     color: textColor.withOpacity(0.8),

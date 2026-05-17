@@ -577,6 +577,29 @@ class DatabaseHelper {
     return Entry.fromMap(maps.first);
   }
 
+  /// Get the timestamp shown on notebook cards and used for activity ordering.
+  Future<DateTime?> getNotebookActivityTime(Notebook notebook) async {
+    final db = await database;
+    final orderBy = notebook.entryStyle == NotebookEntryStyles.classic
+        ? 'updated_at DESC'
+        : 'created_at DESC';
+    final maps = await db.query(
+      'entries',
+      columns: notebook.entryStyle == NotebookEntryStyles.classic
+          ? ['updated_at']
+          : ['created_at'],
+      where: 'notebook_id = ? AND is_deleted = 0',
+      whereArgs: [notebook.id],
+      orderBy: orderBy,
+      limit: 1,
+    );
+    if (maps.isEmpty) return null;
+    final key = notebook.entryStyle == NotebookEntryStyles.classic
+        ? 'updated_at'
+        : 'created_at';
+    return DateTime.parse(maps.first[key] as String);
+  }
+
   /// Toggle entry star status
   Future<void> toggleEntryStar(String id) async {
     final db = await database;

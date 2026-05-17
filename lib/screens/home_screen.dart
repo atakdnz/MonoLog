@@ -766,6 +766,25 @@ class _HomeScreenState extends State<HomeScreen> {
                   },
                 ),
                 actions: [
+                  Consumer<NotebooksProvider>(
+                    builder: (context, provider, _) {
+                      return PopupMenuButton<NotebookOrder>(
+                        icon: const Icon(Icons.sort),
+                        tooltip: 'Order notebooks',
+                        initialValue: provider.order,
+                        onSelected: provider.setOrder,
+                        itemBuilder: (context) => NotebookOrder.values
+                            .map(
+                              (order) => CheckedPopupMenuItem(
+                                value: order,
+                                checked: provider.order == order,
+                                child: Text(order.label),
+                              ),
+                            )
+                            .toList(),
+                      );
+                    },
+                  ),
                   IconButton(
                     icon: const Icon(Icons.search),
                     onPressed: _navigateToSearch,
@@ -872,32 +891,48 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildNotebookGrid(List<Notebook> notebooks) {
+    final provider = context.watch<NotebooksProvider>();
+
+    Widget buildNotebookCard(BuildContext context, int index) {
+      final notebook = notebooks[index];
+      return NotebookCard(
+        key: ValueKey(notebook.id),
+        notebook: notebook,
+        isSelected: _selectedNotebookIds.contains(notebook.id),
+        onSelect: () => _toggleNotebookSelection(notebook),
+        onTap: () {
+          if (_isSelectingNotebooks) {
+            _toggleNotebookSelection(notebook);
+          } else {
+            _navigateToNotebook(notebook);
+          }
+        },
+      );
+    }
+
+    const gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: 2,
+      crossAxisSpacing: 12,
+      mainAxisSpacing: 12,
+      childAspectRatio: 1.1,
+    );
+
+    if (!provider.isCustomOrder) {
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: gridDelegate,
+        itemCount: notebooks.length,
+        itemBuilder: buildNotebookCard,
+      );
+    }
+
     return ReorderableGridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-        crossAxisCount: 2,
-        crossAxisSpacing: 12,
-        mainAxisSpacing: 12,
-        childAspectRatio: 1.1,
-      ),
+      gridDelegate: gridDelegate,
       itemCount: notebooks.length,
-      itemBuilder: (context, index) {
-        final notebook = notebooks[index];
-        return NotebookCard(
-          key: ValueKey(notebook.id),
-          notebook: notebook,
-          isSelected: _selectedNotebookIds.contains(notebook.id),
-          onSelect: () => _toggleNotebookSelection(notebook),
-          onTap: () {
-            if (_isSelectingNotebooks) {
-              _toggleNotebookSelection(notebook);
-            } else {
-              _navigateToNotebook(notebook);
-            }
-          },
-        );
-      },
+      itemBuilder: buildNotebookCard,
       onReorder: (oldIndex, newIndex) {
         if (oldIndex == newIndex) {
           return;

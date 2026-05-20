@@ -3,8 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:path/path.dart' as p;
+import 'package:image_picker/image_picker.dart';
+import 'package:uuid/uuid.dart';
 import '../database/database_helper.dart';
 import '../models/annotation_stroke.dart';
 import '../models/notebook.dart';
@@ -17,14 +17,20 @@ import '../utils/time_utils.dart';
 import '../widgets/entry_bubble.dart';
 import '../widgets/date_header.dart';
 import '../widgets/input_bar.dart';
+import '../widgets/audio_entry_player.dart';
+import '../widgets/voice_recorder_sheet.dart';
 import 'image_annotation_screen.dart';
 import '../services/annotation_metadata_service.dart';
+import '../services/media_storage_service.dart';
 import 'entry_edit_screen.dart';
 import 'notebook_details_screen.dart';
+import 'voice_player_screen.dart';
 
 enum _ClassicInlineFormat { bold, italic, code }
 
 enum _ClassicLineFormat { heading, bullet, quote }
+
+enum _ClassicImageSource { camera, gallery, drawing }
 
 class NotebookScreen extends StatefulWidget {
   final Notebook notebook;
@@ -40,10 +46,16 @@ class NotebookScreen extends StatefulWidget {
   State<NotebookScreen> createState() => _NotebookScreenState();
 }
 
-class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObserver {
+class _NotebookScreenState extends State<NotebookScreen>
+    with WidgetsBindingObserver {
   final _scrollController = ScrollController();
-  final _classicController = _ClassicRichTextController();
+  final _classicBlockScrollController = ScrollController();
+  final List<_ClassicDocumentBlock> _classicBlocks = [];
+  final Map<String, _ClassicRichTextController> _classicTextControllers = {};
+  final Map<String, FocusNode> _classicTextFocusNodes = {};
   final _db = DatabaseHelper();
+  final _mediaStorage = MediaStorageService();
+  final _imagePicker = ImagePicker();
   late Notebook _notebook;
   bool _isSearching = false;
   bool _showStarredOnly = false;
@@ -68,15 +80,27 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
   bool _draftLoaded = false;
 
   bool get _isSelectingEntries => _selectedEntryIds.isNotEmpty;
+  _ClassicRichTextController? get _activeClassicController {
+    final focusedId = _focusedClassicTextBlockId;
+    if (focusedId != null) {
+      final controller = _classicTextControllers[focusedId];
+      if (controller != null) return controller;
+    }
+    for (final block in _classicBlocks) {
+      if (block is _ClassicTextBlock) {
+        return _classicTextControllers[block.id];
+      }
+    }
+    return null;
+  }
+
+  String? _focusedClassicTextBlockId;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _notebook = widget.notebook;
-    _lastClassicSnapshot = _classicController.snapshot();
-    _classicController.addListener(_trackClassicHistory);
-    _classicController.addListener(_scheduleClassicSave);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<EntriesProvider>().setNotebook(_notebook.id).then((_) {
         if (_notebook.entryStyle == NotebookEntryStyles.classic && mounted) {
@@ -105,7 +129,13 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
     _classicSaveDebounce?.cancel();
     _classicHistoryDebounce?.cancel();
     _scrollController.dispose();
-    _classicController.dispose();
+    _classicBlockScrollController.dispose();
+    for (final controller in _classicTextControllers.values) {
+      controller.dispose();
+    }
+    for (final focusNode in _classicTextFocusNodes.values) {
+      focusNode.dispose();
+    }
     _searchController.dispose();
     _searchFocusNode.dispose();
     super.dispose();
@@ -146,36 +176,343 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
         _currentChatDraftText.isEmpty ? null : _currentChatDraftText,
       );
     } else if (_notebook.entryStyle == NotebookEntryStyles.classic) {
-      final text = _ClassicMarkdownCodec.encode(_classicController.snapshot());
+      final text = _encodeClassicBlocks();
       _db.saveDraft(_notebook.id, text.isEmpty ? null : text);
     }
   }
 
   void _syncClassicEditor() {
     final entries = context.read<EntriesProvider>().entries;
-    final entry = entries.isEmpty ? null : entries.first;
-    final document = _ClassicMarkdownCodec.decode(entry?.content ?? '');
+    Entry? entry;
+    for (final candidate in entries) {
+      if (candidate.hasContent && !candidate.hasMedia) {
+        entry = candidate;
+        break;
+      }
+    }
     _classicEntryId = entry?.id;
     _isApplyingClassicText = true;
-    _classicController.restore(document);
-    _classicController.selection = TextSelection.collapsed(
-      offset: _classicController.text.length,
-    );
-    _lastClassicSnapshot = _classicController.snapshot();
+    _replaceClassicBlocks(_decodeClassicBlocks(entry?.content ?? ''));
+    final controller = _activeClassicController;
+    if (controller != null) {
+      controller.selection = TextSelection.collapsed(
+        offset: controller.text.length,
+      );
+      _lastClassicSnapshot = controller.snapshot();
+    } else {
+      _lastClassicSnapshot = _ClassicEditorSnapshot.empty();
+    }
     _classicUndoStack.clear();
     _classicRedoStack.clear();
     _classicTypingUndoBase = null;
     _isApplyingClassicText = false;
   }
 
-  void _trackClassicHistory() {
-    if (_isApplyingClassicText ||
-        _notebook.entryStyle != NotebookEntryStyles.classic) {
-      _lastClassicSnapshot = _classicController.snapshot();
+  void _replaceClassicBlocks(List<_ClassicDocumentBlock> blocks) {
+    for (final controller in _classicTextControllers.values) {
+      controller.dispose();
+    }
+    for (final focusNode in _classicTextFocusNodes.values) {
+      focusNode.dispose();
+    }
+    _classicTextControllers.clear();
+    _classicTextFocusNodes.clear();
+    _classicBlocks
+      ..clear()
+      ..addAll(blocks);
+
+    if (!_classicBlocks.any((block) => block is _ClassicTextBlock)) {
+      _classicBlocks.add(_ClassicTextBlock.empty());
+    }
+
+    for (final block in _classicBlocks.whereType<_ClassicTextBlock>()) {
+      _registerClassicTextBlock(block);
+    }
+    _focusedClassicTextBlockId = _classicBlocks
+        .whereType<_ClassicTextBlock>()
+        .map((block) => block.id)
+        .firstOrNull;
+  }
+
+  void _registerClassicTextBlock(_ClassicTextBlock block) {
+    final controller = _ClassicRichTextController();
+    controller.restore(block.snapshot);
+    controller.addListener(_trackClassicHistory);
+    controller.addListener(_scheduleClassicSave);
+    _classicTextControllers[block.id] = controller;
+
+    final focusNode = FocusNode();
+    focusNode.addListener(() {
+      if (focusNode.hasFocus) {
+        _focusedClassicTextBlockId = block.id;
+        _lastClassicSnapshot = controller.snapshot();
+        _classicTypingUndoBase = null;
+        if (mounted) setState(() {});
+      }
+    });
+    _classicTextFocusNodes[block.id] = focusNode;
+  }
+
+  List<_ClassicDocumentBlock> _decodeClassicBlocks(String markdown) {
+    final blocks = <_ClassicDocumentBlock>[];
+    var cursor = 0;
+    for (final match in _ClassicMediaTokens.tokenPattern.allMatches(markdown)) {
+      final textPart = markdown.substring(cursor, match.start);
+      _addClassicTextPart(blocks, textPart);
+      final imageId = match.group(1);
+      final audioId = match.group(2);
+      blocks.add(
+        _ClassicMediaBlock(
+          entryId: imageId ?? audioId!,
+          type: imageId != null
+              ? _ClassicMediaBlockType.image
+              : _ClassicMediaBlockType.audio,
+        ),
+      );
+      cursor = match.end;
+    }
+    _addClassicTextPart(blocks, markdown.substring(cursor));
+    if (blocks.isEmpty || blocks.last is! _ClassicTextBlock) {
+      blocks.add(_ClassicTextBlock.empty());
+    }
+    return blocks;
+  }
+
+  void _addClassicTextPart(List<_ClassicDocumentBlock> blocks, String text) {
+    final normalized = text.replaceAll(RegExp(r'^\n|\n$'), '');
+    if (normalized.isEmpty) return;
+    blocks.add(_ClassicTextBlock(_ClassicMarkdownCodec.decode(normalized)));
+  }
+
+  String _encodeClassicBlocks() {
+    final parts = <String>[];
+    for (final block in _classicBlocks) {
+      if (block is _ClassicTextBlock) {
+        final controller = _classicTextControllers[block.id];
+        final encoded = controller == null
+            ? _ClassicMarkdownCodec.encode(block.snapshot)
+            : _ClassicMarkdownCodec.encode(controller.snapshot());
+        if (encoded.trim().isNotEmpty) parts.add(encoded);
+      } else if (block is _ClassicMediaBlock) {
+        parts.add(
+          block.type == _ClassicMediaBlockType.image
+              ? _ClassicMediaTokens.image(block.entryId)
+              : _ClassicMediaTokens.audio(block.entryId),
+        );
+      }
+    }
+    return parts.join('\n');
+  }
+
+  ({_ClassicEditorSnapshot before, _ClassicEditorSnapshot after})
+  _splitClassicSnapshot(_ClassicEditorSnapshot snapshot, int offset) {
+    final text = snapshot.text;
+    final splitOffset = offset.clamp(0, text.length);
+    return (
+      before: _sliceClassicSnapshot(snapshot, 0, splitOffset),
+      after: _sliceClassicSnapshot(snapshot, splitOffset, text.length),
+    );
+  }
+
+  _ClassicEditorSnapshot _sliceClassicSnapshot(
+    _ClassicEditorSnapshot snapshot,
+    int start,
+    int end,
+  ) {
+    final text = snapshot.text.substring(start, end);
+    final inlineStyles = snapshot.inlineStyles
+        .map((style) {
+          final clippedStart = style.start.clamp(start, end);
+          final clippedEnd = style.end.clamp(start, end);
+          if (clippedEnd <= clippedStart) return null;
+          return _ClassicStyleRange(
+            start: clippedStart - start,
+            end: clippedEnd - start,
+            format: style.format,
+          );
+        })
+        .whereType<_ClassicStyleRange>()
+        .toList();
+    final lineStyles = snapshot.lineStyles
+        .map((style) {
+          final clippedStart = style.start.clamp(start, end);
+          final clippedEnd = style.end.clamp(start, end);
+          if (clippedEnd <= clippedStart) return null;
+          return _ClassicLineStyle(
+            start: clippedStart - start,
+            end: clippedEnd - start,
+            format: style.format,
+          );
+        })
+        .whereType<_ClassicLineStyle>()
+        .toList();
+    return _ClassicEditorSnapshot(
+      value: TextEditingValue(text: text),
+      inlineStyles: inlineStyles,
+      lineStyles: lineStyles,
+    );
+  }
+
+  void _insertClassicMediaBlock(_ClassicMediaBlock block) {
+    _flushClassicTypingUndoStep();
+    final focusedId = _focusedClassicTextBlockId;
+    final focusedIndex = focusedId == null
+        ? -1
+        : _classicBlocks.indexWhere(
+            (candidate) =>
+                candidate is _ClassicTextBlock && candidate.id == focusedId,
+          );
+
+    if (focusedIndex == -1) {
+      final trailing = _ClassicTextBlock.empty();
+      _classicBlocks.addAll([block, trailing]);
+      _registerClassicTextBlock(trailing);
+      _focusedClassicTextBlockId = trailing.id;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _classicTextFocusNodes[trailing.id]?.requestFocus();
+      });
+      _scheduleClassicSave();
+      setState(() {});
       return;
     }
 
-    final currentSnapshot = _classicController.snapshot();
+    final currentBlock = _classicBlocks[focusedIndex] as _ClassicTextBlock;
+    final controller = _classicTextControllers[currentBlock.id];
+    if (controller == null) return;
+
+    final split = _splitClassicSnapshot(
+      controller.snapshot(),
+      controller.selection.isValid
+          ? controller.selection.baseOffset.clamp(0, controller.text.length)
+          : controller.text.length,
+    );
+
+    controller.restore(split.before);
+    final trailing = _ClassicTextBlock(split.after);
+    _classicBlocks.insertAll(focusedIndex + 1, [block, trailing]);
+    _registerClassicTextBlock(trailing);
+    _focusedClassicTextBlockId = trailing.id;
+    _classicRedoStack.clear();
+    _lastClassicSnapshot = split.after;
+    _scheduleClassicSave();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _classicTextFocusNodes[trailing.id]?.requestFocus();
+    });
+    setState(() {});
+  }
+
+  Future<void> _insertClassicImage() async {
+    final source = await showModalBottomSheet<_ClassicImageSource>(
+      context: context,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.camera_alt),
+                title: const Text('Take Photo'),
+                onTap: () => Navigator.pop(context, _ClassicImageSource.camera),
+              ),
+              ListTile(
+                leading: const Icon(Icons.photo_library),
+                title: const Text('Choose from Gallery'),
+                onTap: () =>
+                    Navigator.pop(context, _ClassicImageSource.gallery),
+              ),
+              ListTile(
+                leading: const Icon(Icons.draw_outlined),
+                title: const Text('Blank Drawing'),
+                onTap: () =>
+                    Navigator.pop(context, _ClassicImageSource.drawing),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    if (source == null || !mounted) return;
+
+    SavedImage? savedImage;
+    if (source == _ClassicImageSource.drawing) {
+      final result = await Navigator.of(context).push<ImageAnnotationResult>(
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => const ImageAnnotationScreen(),
+        ),
+      );
+      if (result == null || !mounted) return;
+      savedImage = await _mediaStorage.saveDrawingResult(
+        imagePath: result.imagePath,
+        annotationBaseImagePath: result.baseImagePath,
+        strokes: result.strokes,
+      );
+    } else {
+      final image = await _imagePicker.pickImage(
+        source: source == _ClassicImageSource.camera
+            ? ImageSource.camera
+            : ImageSource.gallery,
+        imageQuality: 85,
+      );
+      if (image == null || !mounted) return;
+      savedImage = await _mediaStorage.saveImage(image.path);
+    }
+    if (savedImage == null || !mounted) return;
+
+    final entry = await context.read<EntriesProvider>().addEntry(
+      content: '',
+      imagePath: savedImage.imagePath,
+      annotationBaseImagePath: savedImage.annotationBaseImagePath,
+      annotationStrokes: savedImage.annotationStrokes,
+    );
+    _insertClassicMediaBlock(
+      _ClassicMediaBlock(entryId: entry.id, type: _ClassicMediaBlockType.image),
+    );
+  }
+
+  Future<void> _insertClassicVoice() async {
+    final result = await showModalBottomSheet<VoiceRecordingResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const VoiceRecorderSheet(),
+    );
+    if (result == null || !mounted) return;
+
+    final savedAudio = await _mediaStorage.saveAudio(
+      result.path,
+      result.duration,
+    );
+    if (savedAudio == null || !mounted) return;
+
+    final entry = await context.read<EntriesProvider>().addEntry(
+      content: '',
+      audioPath: savedAudio.audioPath,
+      audioDurationMs: savedAudio.durationMs,
+    );
+    _insertClassicMediaBlock(
+      _ClassicMediaBlock(entryId: entry.id, type: _ClassicMediaBlockType.audio),
+    );
+  }
+
+  void _trackClassicHistory() {
+    final controller = _activeClassicController;
+    if (controller == null) return;
+    if (_isApplyingClassicText ||
+        _notebook.entryStyle != NotebookEntryStyles.classic) {
+      _lastClassicSnapshot = controller.snapshot();
+      return;
+    }
+
+    final currentSnapshot = controller.snapshot();
     if (currentSnapshot.hasSameContent(_lastClassicSnapshot)) {
       _lastClassicSnapshot = currentSnapshot;
       return;
@@ -189,12 +526,12 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
       _classicTypingUndoBase = null;
       setState(() {});
     });
-    _classicController.reflowInlineFormats(_lastClassicSnapshot.text);
+    controller.reflowInlineFormats(_lastClassicSnapshot.text);
     if (_isSearching && _notebook.entryStyle == NotebookEntryStyles.classic) {
       _updateClassicSearchMatches(_searchController.text);
     }
     _classicRedoStack.clear();
-    _lastClassicSnapshot = _classicController.snapshot();
+    _lastClassicSnapshot = controller.snapshot();
     if (mounted) setState(() {});
   }
 
@@ -210,9 +547,11 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
   }
 
   void _setClassicSnapshotFromHistory(_ClassicEditorSnapshot snapshot) {
+    final controller = _activeClassicController;
+    if (controller == null) return;
     _isApplyingClassicText = true;
-    _classicController.restore(snapshot);
-    _lastClassicSnapshot = _classicController.snapshot();
+    controller.restore(snapshot);
+    _lastClassicSnapshot = controller.snapshot();
     _classicTypingUndoBase = null;
     _classicHistoryDebounce?.cancel();
     _isApplyingClassicText = false;
@@ -221,15 +560,19 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
   }
 
   void _undoClassicEdit() {
+    final controller = _activeClassicController;
+    if (controller == null) return;
     _flushClassicTypingUndoStep();
     if (_classicUndoStack.isEmpty) return;
-    _classicRedoStack.add(_classicController.snapshot());
+    _classicRedoStack.add(controller.snapshot());
     _setClassicSnapshotFromHistory(_classicUndoStack.removeLast());
   }
 
   void _redoClassicEdit() {
+    final controller = _activeClassicController;
+    if (controller == null) return;
     if (_classicRedoStack.isEmpty) return;
-    _classicUndoStack.add(_classicController.snapshot());
+    _classicUndoStack.add(controller.snapshot());
     _setClassicSnapshotFromHistory(_classicRedoStack.removeLast());
   }
 
@@ -241,29 +584,33 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
   }
 
   void _applyInlineClassicFormat(_ClassicInlineFormat format) {
+    final controller = _activeClassicController;
+    if (controller == null) return;
     _flushClassicTypingUndoStep();
-    final before = _classicController.snapshot();
-    _classicController.toggleInlineFormat(format);
-    if (!_classicController.snapshot().hasSameContent(before)) {
+    final before = controller.snapshot();
+    controller.toggleInlineFormat(format);
+    if (!controller.snapshot().hasSameContent(before)) {
       _pushClassicUndoSnapshot(before);
       _classicRedoStack.clear();
       _scheduleClassicSave();
     }
     _classicRedoStack.clear();
-    _lastClassicSnapshot = _classicController.snapshot();
+    _lastClassicSnapshot = controller.snapshot();
     setState(() {});
   }
 
   void _applyLineClassicFormat(_ClassicLineFormat format) {
+    final controller = _activeClassicController;
+    if (controller == null) return;
     _flushClassicTypingUndoStep();
-    final before = _classicController.snapshot();
-    _classicController.toggleLineFormat(format);
-    if (!_classicController.snapshot().hasSameContent(before)) {
+    final before = controller.snapshot();
+    controller.toggleLineFormat(format);
+    if (!controller.snapshot().hasSameContent(before)) {
       _pushClassicUndoSnapshot(before);
       _classicRedoStack.clear();
       _scheduleClassicSave();
     }
-    _lastClassicSnapshot = _classicController.snapshot();
+    _lastClassicSnapshot = controller.snapshot();
     setState(() {});
   }
 
@@ -283,7 +630,7 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
     if (!mounted || _notebook.entryStyle != NotebookEntryStyles.classic) return;
 
     final provider = context.read<EntriesProvider>();
-    final text = _ClassicMarkdownCodec.encode(_classicController.snapshot());
+    final text = _encodeClassicBlocks();
 
     if (_classicEntryId == null) {
       if (text.trim().isEmpty) return;
@@ -307,64 +654,16 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
     _db.saveDraft(_notebook.id, text.isEmpty ? null : text);
   }
 
-  Future<_SavedImage?> _saveImage(
+  Future<SavedImage?> _saveImage(
     String sourcePath, {
     String? annotationBaseImagePath,
     String? annotationStrokes,
   }) async {
-    try {
-      final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory(p.join(appDir.path, 'images'));
-      if (!await imagesDir.exists()) {
-        await imagesDir.create(recursive: true);
-      }
-
-      final fileName =
-          '${DateTime.now().millisecondsSinceEpoch}_${p.basename(sourcePath)}';
-      final destPath = p.join(imagesDir.path, fileName);
-      await File(sourcePath).copy(destPath);
-
-      var savedBaseImagePath = annotationBaseImagePath;
-      var savedStrokes = annotationStrokes;
-
-      final metadata = await AnnotationMetadataService.readMetadata(sourcePath);
-      if (metadata != null && savedStrokes == null) {
-        savedBaseImagePath = metadata.baseImagePath;
-        savedStrokes = AnnotationMetadataService.encodeStrokes(
-          metadata.strokes,
-        );
-      }
-
-      if (savedStrokes != null) {
-        String? baseImagePath = savedBaseImagePath;
-        if (baseImagePath != null && await File(baseImagePath).exists()) {
-          // Only copy the base image if it's not already in app storage.
-          if (!p.isWithin(imagesDir.path, baseImagePath)) {
-            final baseFileName =
-                '${DateTime.now().millisecondsSinceEpoch}_base_${p.basename(baseImagePath)}';
-            final baseDestPath = p.join(imagesDir.path, baseFileName);
-            await File(baseImagePath).copy(baseDestPath);
-            baseImagePath = baseDestPath;
-          }
-        }
-
-        await AnnotationMetadataService.writeMetadata(
-          imagePath: destPath,
-          baseImagePath: baseImagePath,
-          strokes: AnnotationMetadataService.decodeStrokes(savedStrokes),
-        );
-        savedBaseImagePath = baseImagePath;
-      }
-
-      return _SavedImage(
-        imagePath: destPath,
-        annotationBaseImagePath: savedBaseImagePath,
-        annotationStrokes: savedStrokes,
-      );
-    } catch (e) {
-      debugPrint('Error saving image: $e');
-      return null;
-    }
+    return _mediaStorage.saveImage(
+      sourcePath,
+      annotationBaseImagePath: annotationBaseImagePath,
+      annotationStrokes: annotationStrokes,
+    );
   }
 
   Future<void> _handleSend(
@@ -373,13 +672,22 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
     DateTime? customTime,
     String? annotationBaseImagePath,
     String? annotationStrokes,
+    String? audioPath,
+    int? audioDurationMs,
   ) async {
-    _SavedImage? savedImage;
+    SavedImage? savedImage;
     if (imagePath != null) {
       savedImage = await _saveImage(
         imagePath,
         annotationBaseImagePath: annotationBaseImagePath,
         annotationStrokes: annotationStrokes,
+      );
+    }
+    SavedAudio? savedAudio;
+    if (audioPath != null) {
+      savedAudio = await _mediaStorage.saveAudio(
+        audioPath,
+        Duration(milliseconds: audioDurationMs ?? 0),
       );
     }
 
@@ -388,6 +696,8 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
       imagePath: savedImage?.imagePath,
       annotationBaseImagePath: savedImage?.annotationBaseImagePath,
       annotationStrokes: savedImage?.annotationStrokes,
+      audioPath: savedAudio?.audioPath,
+      audioDurationMs: savedAudio?.durationMs,
       displayTime: customTime,
     );
 
@@ -452,6 +762,9 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
           }
           if (entry.hasImage) {
             parts.add('[Image: ${entry.imagePath}]');
+          }
+          if (entry.hasAudio) {
+            parts.add('[Voice note: ${entry.audioPath}]');
           }
           return parts.join('\n');
         })
@@ -881,11 +1194,14 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
   void _clearClassicSearchMatches() {
     _classicSearchMatches = [];
     _classicSearchCurrentMatch = 0;
-    _classicController.highlightedRanges = [];
+    for (final controller in _classicTextControllers.values) {
+      controller.highlightedRanges = [];
+    }
   }
 
   void _updateClassicSearchMatches(String query) {
-    final text = _classicController.text;
+    final controller = _activeClassicController;
+    final text = controller?.text ?? '';
     final trimmedQuery = query.trim();
     if (trimmedQuery.isEmpty || text.isEmpty) {
       _clearClassicSearchMatches();
@@ -912,7 +1228,7 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
         matches.length - 1,
       );
     }
-    _classicController.highlightedRanges = matches;
+    controller?.highlightedRanges = matches;
   }
 
   void _goToClassicSearchMatch(int direction) {
@@ -927,7 +1243,9 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
     });
 
     final range = _classicSearchMatches[_classicSearchCurrentMatch];
-    _classicController.selection = TextSelection(
+    final controller = _activeClassicController;
+    if (controller == null) return;
+    controller.selection = TextSelection(
       baseOffset: range.start,
       extentOffset: range.end,
     );
@@ -1301,7 +1619,7 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
 
                     if (_notebook.entryStyle == NotebookEntryStyles.classic) {
                       if (_classicEntryId == null &&
-                          _classicController.text.isEmpty &&
+                          _classicBlocks.isEmpty &&
                           provider.entries.isNotEmpty) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted) _syncClassicEditor();
@@ -1393,6 +1711,8 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
   Widget _buildClassicEditor(Color notebookColor) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+    final entries = context.watch<EntriesProvider>().entries;
+    final entriesById = {for (final entry in entries) entry.id: entry};
     final editorColor = Color.lerp(
       theme.colorScheme.surface,
       notebookColor,
@@ -1405,35 +1725,290 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
         color: editorColor,
         borderRadius: BorderRadius.circular(18),
         clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _classicController,
-                autofocus: !_isSearching,
-                expands: true,
-                minLines: null,
-                maxLines: null,
-                textAlignVertical: TextAlignVertical.top,
-                keyboardType: TextInputType.multiline,
-                textCapitalization: TextCapitalization.sentences,
-                style: theme.textTheme.bodyLarge?.copyWith(
-                  height: 1.55,
-                  fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16.0) * Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
-                ),
-                decoration: InputDecoration(
-                  hintText: 'Start writing...',
-                  filled: true,
-                  fillColor: Colors.transparent,
-                  border: InputBorder.none,
-                  contentPadding: const EdgeInsets.all(18),
-                  hintStyle: TextStyle(
-                    color: theme.colorScheme.onSurface.withOpacity(0.35),
-                  ),
-                ),
-              ),
+        child: ListView.builder(
+          controller: _classicBlockScrollController,
+          padding: const EdgeInsets.all(18),
+          itemCount: _classicBlocks.length,
+          itemBuilder: (context, index) {
+            final block = _classicBlocks[index];
+            if (block is _ClassicTextBlock) {
+              return _buildClassicTextBlock(theme, block);
+            }
+            if (block is _ClassicMediaBlock) {
+              return _buildClassicMediaBlock(
+                theme,
+                notebookColor,
+                block,
+                entriesById[block.entryId],
+              );
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClassicTextBlock(ThemeData theme, _ClassicTextBlock block) {
+    final controller = _classicTextControllers[block.id];
+    final focusNode = _classicTextFocusNodes[block.id];
+    if (controller == null || focusNode == null) {
+      return const SizedBox.shrink();
+    }
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      autofocus: !_isSearching && block.id == _focusedClassicTextBlockId,
+      maxLines: null,
+      minLines: 1,
+      keyboardType: TextInputType.multiline,
+      textCapitalization: TextCapitalization.sentences,
+      style: theme.textTheme.bodyLarge?.copyWith(
+        height: 1.55,
+        fontSize:
+            (theme.textTheme.bodyLarge?.fontSize ?? 16.0) *
+            Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
+      ),
+      decoration: InputDecoration(
+        hintText: _classicBlocks.length == 1 ? 'Start writing...' : null,
+        filled: true,
+        fillColor: Colors.transparent,
+        border: InputBorder.none,
+        contentPadding: EdgeInsets.zero,
+        hintStyle: TextStyle(
+          color: theme.colorScheme.onSurface.withOpacity(0.35),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildClassicMediaBlock(
+    ThemeData theme,
+    Color notebookColor,
+    _ClassicMediaBlock block,
+    Entry? entry,
+  ) {
+    final missing = entry == null || !entry.hasMedia;
+    final isDark = theme.brightness == Brightness.dark;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      child: GestureDetector(
+        onTap: () {
+          if (missing) return;
+          if (entry.hasImage) {
+            _showFullScreenImage(entry);
+          } else if (entry.hasAudio) {
+            _showFullScreenVoicePlayer(entry, notebookColor);
+          }
+        },
+        onLongPress: () => _showClassicMediaOptions(block, entry),
+        child: Container(
+          constraints: const BoxConstraints(minHeight: 52),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: notebookColor.withValues(alpha: 0.12),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(
+              color: notebookColor.withValues(alpha: 0.20),
             ),
-          ],
+          ),
+          child: missing
+              ? Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      block.type == _ClassicMediaBlockType.image
+                          ? Icons.broken_image_outlined
+                          : Icons.mic_off_outlined,
+                      color: theme.colorScheme.onSurface
+                          .withValues(alpha: 0.4),
+                      size: 22,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      block.type == _ClassicMediaBlockType.image
+                          ? 'Missing photo'
+                          : 'Missing voice note',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        color: theme.colorScheme.onSurface
+                            .withValues(alpha: 0.45),
+                      ),
+                    ),
+                  ],
+                )
+              : entry.hasImage
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(
+                            File(entry.imagePath!),
+                            width: 44,
+                            height: 44,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 44,
+                              height: 44,
+                              color: theme.colorScheme
+                                  .surfaceContainerHighest,
+                              child: const Icon(
+                                Icons.broken_image_outlined,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Icon(
+                          Icons.photo_outlined,
+                          color: notebookColor,
+                          size: 22,
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Photo',
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w600,
+                            color: isDark
+                                ? Colors.white
+                                : theme.colorScheme.onSurface,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Icon(
+                          Icons.open_in_full_rounded,
+                          size: 14,
+                          color: theme.colorScheme.onSurface
+                              .withValues(alpha: 0.35),
+                        ),
+                      ],
+                    )
+                  : AudioEntryPlayer(
+                      audioPath: entry.audioPath!,
+                      durationMs: entry.audioDurationMs,
+                      accentColor: isDark ? Colors.white : notebookColor,
+                      compact: true,
+                      embedded: true,
+                    ),
+        ),
+      ),
+    );
+  }
+
+  void _showClassicMediaOptions(
+    _ClassicMediaBlock block,
+    Entry? entry,
+  ) {
+    final theme = Theme.of(context);
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) => SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (entry?.hasImage == true)
+                ListTile(
+                  leading: const Icon(Icons.draw_outlined),
+                  title: const Text('Edit Drawing'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _annotateEntryImage(entry!);
+                  },
+                ),
+              if (entry?.hasImage == true)
+                ListTile(
+                  leading: const Icon(Icons.open_in_full),
+                  title: const Text('View Full Size'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showFullScreenImage(entry!);
+                  },
+                ),
+              if (entry?.hasAudio == true)
+                ListTile(
+                  leading: const Icon(Icons.open_in_full),
+                  title: const Text('Open Player'),
+                  onTap: () {
+                    Navigator.pop(context);
+                    _showFullScreenVoicePlayer(
+                      entry!,
+                      NotebookColors.fromHex(_notebook.color),
+                    );
+                  },
+                ),
+              const Divider(),
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline,
+                  color: theme.colorScheme.error,
+                ),
+                title: Text(
+                  'Remove',
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
+                onTap: () {
+                  Navigator.pop(context);
+                  _removeClassicMediaBlock(block.id);
+                },
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _removeClassicMediaBlock(String blockId) {
+    final index = _classicBlocks.indexWhere(
+      (block) => block is _ClassicMediaBlock && block.id == blockId,
+    );
+    if (index == -1) return;
+
+    setState(() {
+      _classicBlocks.removeAt(index);
+      _mergeAdjacentClassicTextBlocksAround(index);
+    });
+    _scheduleClassicSave();
+  }
+
+  void _mergeAdjacentClassicTextBlocksAround(int index) {
+    final previousIndex = index - 1;
+    if (previousIndex < 0 || previousIndex >= _classicBlocks.length - 1) {
+      return;
+    }
+    final previous = _classicBlocks[previousIndex];
+    final next = _classicBlocks[previousIndex + 1];
+    if (previous is! _ClassicTextBlock || next is! _ClassicTextBlock) return;
+
+    final previousController = _classicTextControllers[previous.id];
+    final nextController = _classicTextControllers[next.id];
+    if (previousController == null || nextController == null) return;
+
+    final mergedMarkdown = [
+      _ClassicMarkdownCodec.encode(previousController.snapshot()),
+      _ClassicMarkdownCodec.encode(nextController.snapshot()),
+    ].where((part) => part.isNotEmpty).join('\n');
+    previousController.restore(_ClassicMarkdownCodec.decode(mergedMarkdown));
+
+    _classicBlocks.removeAt(previousIndex + 1);
+    _classicTextControllers.remove(next.id)?.dispose();
+    _classicTextFocusNodes.remove(next.id)?.dispose();
+  }
+
+  void _showFullScreenVoicePlayer(Entry entry, Color accentColor) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => VoicePlayerScreen(
+          entry: entry,
+          accentColor: accentColor,
         ),
       ),
     );
@@ -1468,27 +2043,32 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
               _buildClassicToolbarButton(
                 icon: Icons.format_bold,
                 tooltip: 'Bold',
-                selected: _classicController.activeInlineFormats.contains(
-                  _ClassicInlineFormat.bold,
-                ),
+                selected: _activeClassicController?.activeInlineFormats.contains(
+                      _ClassicInlineFormat.bold,
+                    ) ??
+                    false,
                 onPressed: () =>
                     _applyInlineClassicFormat(_ClassicInlineFormat.bold),
               ),
               _buildClassicToolbarButton(
                 icon: Icons.format_italic,
                 tooltip: 'Italic',
-                selected: _classicController.activeInlineFormats.contains(
-                  _ClassicInlineFormat.italic,
-                ),
+                selected:
+                    _activeClassicController?.activeInlineFormats.contains(
+                      _ClassicInlineFormat.italic,
+                    ) ??
+                    false,
                 onPressed: () =>
                     _applyInlineClassicFormat(_ClassicInlineFormat.italic),
               ),
               _buildClassicToolbarButton(
                 icon: Icons.code,
                 tooltip: 'Inline code',
-                selected: _classicController.activeInlineFormats.contains(
-                  _ClassicInlineFormat.code,
-                ),
+                selected:
+                    _activeClassicController?.activeInlineFormats.contains(
+                      _ClassicInlineFormat.code,
+                    ) ??
+                    false,
                 onPressed: () =>
                     _applyInlineClassicFormat(_ClassicInlineFormat.code),
               ),
@@ -1497,7 +2077,7 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
                 icon: Icons.title,
                 tooltip: 'Heading',
                 selected:
-                    _classicController.activeLineFormat ==
+                    _activeClassicController?.activeLineFormat ==
                     _ClassicLineFormat.heading,
                 onPressed: () =>
                     _applyLineClassicFormat(_ClassicLineFormat.heading),
@@ -1506,7 +2086,7 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
                 icon: Icons.format_list_bulleted,
                 tooltip: 'Bullet list',
                 selected:
-                    _classicController.activeLineFormat ==
+                    _activeClassicController?.activeLineFormat ==
                     _ClassicLineFormat.bullet,
                 onPressed: () =>
                     _applyLineClassicFormat(_ClassicLineFormat.bullet),
@@ -1515,10 +2095,21 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
                 icon: Icons.format_quote,
                 tooltip: 'Quote',
                 selected:
-                    _classicController.activeLineFormat ==
+                    _activeClassicController?.activeLineFormat ==
                     _ClassicLineFormat.quote,
                 onPressed: () =>
                     _applyLineClassicFormat(_ClassicLineFormat.quote),
+              ),
+              _buildClassicToolbarDivider(theme),
+              _buildClassicToolbarButton(
+                icon: Icons.image_outlined,
+                tooltip: 'Insert image',
+                onPressed: _insertClassicImage,
+              ),
+              _buildClassicToolbarButton(
+                icon: Icons.mic_none,
+                tooltip: 'Insert voice note',
+                onPressed: _insertClassicVoice,
               ),
             ],
           ),
@@ -1789,18 +2380,6 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
       ),
     );
   }
-}
-
-class _SavedImage {
-  final String imagePath;
-  final String? annotationBaseImagePath;
-  final String? annotationStrokes;
-
-  const _SavedImage({
-    required this.imagePath,
-    required this.annotationBaseImagePath,
-    required this.annotationStrokes,
-  });
 }
 
 class _ClassicStyleRange {
@@ -2135,7 +2714,7 @@ class _ClassicRichTextController extends TextEditingController {
     final textValue = text;
     if (textValue.isEmpty) return TextSpan(style: baseStyle, text: '');
 
-    final spans = <TextSpan>[];
+    final spans = <InlineSpan>[];
     for (var i = 0; i < textValue.length; i++) {
       final lineStyle = lineStyles
           .where((range) => i >= range.start && i < range.end)
@@ -2391,6 +2970,56 @@ class _ClassicMarkdownCodec {
         return '`';
     }
   }
+}
+
+sealed class _ClassicDocumentBlock {
+  final String id;
+
+  _ClassicDocumentBlock({String? id}) : id = id ?? const Uuid().v4();
+}
+
+class _ClassicTextBlock extends _ClassicDocumentBlock {
+  final _ClassicEditorSnapshot snapshot;
+
+  _ClassicTextBlock(this.snapshot, {super.id});
+
+  factory _ClassicTextBlock.empty() {
+    return _ClassicTextBlock(_ClassicEditorSnapshot.empty());
+  }
+}
+
+enum _ClassicMediaBlockType { image, audio }
+
+class _ClassicMediaBlock extends _ClassicDocumentBlock {
+  final String entryId;
+  final _ClassicMediaBlockType type;
+
+  _ClassicMediaBlock({
+    required this.entryId,
+    required this.type,
+    super.id,
+  });
+}
+
+class _ClassicMediaTokens {
+  static final RegExp tokenPattern = RegExp(
+    r'(?:!\[MonoLog Image\]\(monolog-entry:([^)]+)\)|\[MonoLog Voice\]\(monolog-entry:([^)]+)\))',
+  );
+
+  static String image(String entryId) =>
+      '![MonoLog Image](monolog-entry:$entryId)';
+
+  static String audio(String entryId) =>
+      '[MonoLog Voice](monolog-entry:$entryId)';
+
+  static List<String> ids(String text) {
+    return tokenPattern
+        .allMatches(text)
+        .map((match) => match.group(1) ?? match.group(2))
+        .whereType<String>()
+        .toList();
+  }
+
 }
 
 List<_ClassicStyleRange> _mergeInlineStyles(List<_ClassicStyleRange> styles) {

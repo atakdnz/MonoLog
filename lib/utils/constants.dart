@@ -47,7 +47,7 @@ const int trashRetentionDays = 30;
 
 /// App info
 const String appName = 'MonoLog';
-const String appVersion = '1.7.0';
+const String appVersion = '1.8.0';
 
 /// Animation durations
 const Duration quickAnimation = Duration(milliseconds: 200);

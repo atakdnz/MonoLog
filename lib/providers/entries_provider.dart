@@ -42,6 +42,8 @@ class EntriesProvider with ChangeNotifier {
     String? imagePath,
     String? annotationBaseImagePath,
     String? annotationStrokes,
+    String? audioPath,
+    int? audioDurationMs,
     DateTime? displayTime,
   }) async {
     if (_currentNotebookId == null) {
@@ -54,6 +56,8 @@ class EntriesProvider with ChangeNotifier {
       imagePath: imagePath,
       annotationBaseImagePath: annotationBaseImagePath,
       annotationStrokes: annotationStrokes,
+      audioPath: audioPath,
+      audioDurationMs: audioDurationMs,
       displayTime: displayTime,
     );
 

@@ -13,6 +13,7 @@ import '../screens/image_annotation_screen.dart';
 import '../services/annotation_metadata_service.dart';
 import '../utils/constants.dart';
 import '../utils/time_utils.dart';
+import '../widgets/audio_entry_player.dart';
 
 class EntryEditScreen extends StatefulWidget {
   final Entry entry;
@@ -35,6 +36,8 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
   String? _imagePath;
   String? _annotationBaseImagePath;
   String? _annotationStrokes;
+  String? _audioPath;
+  int? _audioDurationMs;
   bool _hasChanges = false;
   final _imagePicker = ImagePicker();
 
@@ -49,6 +52,8 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
     _imagePath = widget.entry.imagePath;
     _annotationBaseImagePath = widget.entry.annotationBaseImagePath;
     _annotationStrokes = widget.entry.annotationStrokes;
+    _audioPath = widget.entry.audioPath;
+    _audioDurationMs = widget.entry.audioDurationMs;
 
     _contentController.addListener(_onChanged);
   }
@@ -325,9 +330,9 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
   Future<void> _save() async {
     final content = _contentController.text.trim();
 
-    if (content.isEmpty && _imagePath == null) {
+    if (content.isEmpty && _imagePath == null && _audioPath == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Entry must have content or an image')),
+        const SnackBar(content: Text('Entry must have content or media')),
       );
       return;
     }
@@ -337,6 +342,8 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
       imagePath: _imagePath,
       annotationBaseImagePath: _annotationBaseImagePath,
       annotationStrokes: _annotationStrokes,
+      audioPath: _audioPath,
+      audioDurationMs: _audioDurationMs,
       displayTime: _displayTime,
       isStarred: _isStarred,
       updatedAt: DateTime.now(),
@@ -344,6 +351,8 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
       clearImagePath: _imagePath == null && widget.entry.imagePath != null,
       clearAnnotationBaseImagePath: _annotationBaseImagePath == null,
       clearAnnotationStrokes: _annotationStrokes == null,
+      clearAudioPath: _audioPath == null && widget.entry.audioPath != null,
+      clearAudioDuration: _audioPath == null,
     );
 
     await context.read<EntriesProvider>().updateEntry(updatedEntry);
@@ -637,7 +646,10 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
                 minLines: 5,
                 textCapitalization: TextCapitalization.sentences,
                 style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                  fontSize: (Theme.of(context).textTheme.bodyLarge?.fontSize ?? 16.0) * Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
+                  fontSize:
+                      (Theme.of(context).textTheme.bodyLarge?.fontSize ??
+                          16.0) *
+                      Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
                 ),
                 decoration: InputDecoration(
                   hintText: 'Write your entry...',
@@ -652,6 +664,27 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+
+              if (_audioPath != null) ...[
+                AudioEntryPlayer(
+                  audioPath: _audioPath!,
+                  durationMs: _audioDurationMs,
+                  accentColor: Theme.of(context).colorScheme.primary,
+                ),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _audioPath = null;
+                      _audioDurationMs = null;
+                      _hasChanges = true;
+                    });
+                  },
+                  icon: const Icon(Icons.delete_outline),
+                  label: const Text('Remove Voice Note'),
+                ),
+                const SizedBox(height: 16),
+              ],
 
               // Image section
               if (_imagePath != null) ...[

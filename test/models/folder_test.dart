@@ -42,16 +42,19 @@ void main() {
     test('should set default DateTime when not provided', () {
       final folder = Folder(name: 'Test Folder');
 
-      expect(folder.createdAt.difference(DateTime.now()).inSeconds.abs(), lessThan(5));
-      expect(folder.updatedAt.difference(DateTime.now()).inSeconds.abs(), lessThan(5));
+      expect(
+        folder.createdAt.difference(DateTime.now()).inSeconds.abs(),
+        lessThan(5),
+      );
+      expect(
+        folder.updatedAt.difference(DateTime.now()).inSeconds.abs(),
+        lessThan(5),
+      );
     });
 
     group('copyWith', () {
       test('should return a copy with updated name', () {
-        final folder = Folder(
-          id: 'folder-1',
-          name: 'Old Name',
-        );
+        final folder = Folder(id: 'folder-1', name: 'Old Name');
 
         final updated = folder.copyWith(name: 'New Name');
 
@@ -229,43 +232,25 @@ void main() {
 
     group('equality', () {
       test('should be equal when ids match', () {
-        final folder1 = Folder(
-          id: 'folder-1',
-          name: 'Name 1',
-        );
+        final folder1 = Folder(id: 'folder-1', name: 'Name 1');
 
-        final folder2 = Folder(
-          id: 'folder-1',
-          name: 'Name 2',
-        );
+        final folder2 = Folder(id: 'folder-1', name: 'Name 2');
 
         expect(folder1, folder2);
       });
 
       test('should not be equal when ids differ', () {
-        final folder1 = Folder(
-          id: 'folder-1',
-          name: 'Test Folder',
-        );
+        final folder1 = Folder(id: 'folder-1', name: 'Test Folder');
 
-        final folder2 = Folder(
-          id: 'folder-2',
-          name: 'Test Folder',
-        );
+        final folder2 = Folder(id: 'folder-2', name: 'Test Folder');
 
         expect(folder1, isNot(folder2));
       });
 
       test('should have same hashCode when ids match', () {
-        final folder1 = Folder(
-          id: 'folder-1',
-          name: 'Name 1',
-        );
+        final folder1 = Folder(id: 'folder-1', name: 'Name 1');
 
-        final folder2 = Folder(
-          id: 'folder-1',
-          name: 'Name 2',
-        );
+        final folder2 = Folder(id: 'folder-1', name: 'Name 2');
 
         expect(folder1.hashCode, folder2.hashCode);
       });

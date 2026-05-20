@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
 import '../models/entry.dart';
 import '../utils/time_utils.dart';
+import 'audio_entry_player.dart';
 
 class EntryBubble extends StatelessWidget {
   final Entry entry;
@@ -91,7 +92,10 @@ class EntryBubble extends StatelessWidget {
                               entry.content!,
                               theme.textTheme.bodyMedium?.copyWith(
                                 height: 1.5,
-                                fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14.0) * scaleFactor,
+                                fontSize:
+                                    (theme.textTheme.bodyMedium?.fontSize ??
+                                        14.0) *
+                                    scaleFactor,
                                 color: isDark
                                     ? Colors.white
                                     : const Color(0xFF1F1B2E),
@@ -170,6 +174,15 @@ class EntryBubble extends StatelessWidget {
                             ),
                         ],
                       ),
+                    ),
+                  ],
+                  if (entry.hasAudio) ...[
+                    if (entry.hasContent || entry.hasImage)
+                      const SizedBox(height: 10),
+                    AudioEntryPlayer(
+                      audioPath: entry.audioPath!,
+                      durationMs: entry.audioDurationMs,
+                      accentColor: isDark ? Colors.white : bubbleColor,
                     ),
                   ],
                   if (showTimestamp) ...[

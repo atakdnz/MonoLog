@@ -126,7 +126,9 @@ class SettingsScreen extends StatelessWidget {
                   children: [
                     _buildSettingsItem(
                       context: context,
-                      icon: isDarkModeEnabled ? Icons.dark_mode : Icons.light_mode,
+                      icon: isDarkModeEnabled
+                          ? Icons.dark_mode
+                          : Icons.light_mode,
                       iconBg: iconBg,
                       title: isDarkModeEnabled ? 'Dark Mode' : 'Light Mode',
                       subtitle: 'Switch between Light and Dark',
@@ -147,7 +149,8 @@ class SettingsScreen extends StatelessWidget {
                       iconBg: iconBg,
                       title: 'Font Size',
                       subtitle: themeProvider.fontSizeOption.displayName,
-                      onTap: () => _showFontSizeBottomSheet(context, themeProvider),
+                      onTap: () =>
+                          _showFontSizeBottomSheet(context, themeProvider),
                     ),
                   ],
                 );
@@ -724,7 +727,10 @@ class SettingsScreen extends StatelessWidget {
     }
   }
 
-  void _showFontSizeBottomSheet(BuildContext context, ThemeProvider themeProvider) {
+  void _showFontSizeBottomSheet(
+    BuildContext context,
+    ThemeProvider themeProvider,
+  ) {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     const primary = Color(0xFF3b19e6);
@@ -771,7 +777,9 @@ class SettingsScreen extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF141121) : const Color(0xFFF6F6F8),
+                        color: isDark
+                            ? const Color(0xFF141121)
+                            : const Color(0xFFF6F6F8),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
                           color: isDark
@@ -799,7 +807,9 @@ class SettingsScreen extends StatelessWidget {
                                 vertical: 12,
                               ),
                               decoration: BoxDecoration(
-                                color: isDark ? primary : primary.withOpacity(0.12),
+                                color: isDark
+                                    ? primary
+                                    : primary.withOpacity(0.12),
                                 borderRadius: const BorderRadius.only(
                                   topLeft: Radius.circular(18),
                                   topRight: Radius.circular(18),
@@ -811,7 +821,9 @@ class SettingsScreen extends StatelessWidget {
                                 'This is a preview of the text size. Slide below to adjust.',
                                 style: TextStyle(
                                   fontSize: 14.0 * scale,
-                                  color: isDark ? Colors.white : const Color(0xFF1F1B2E),
+                                  color: isDark
+                                      ? Colors.white
+                                      : const Color(0xFF1F1B2E),
                                   height: 1.5,
                                 ),
                               ),
@@ -843,7 +855,8 @@ class SettingsScreen extends StatelessWidget {
                                 ? Colors.white.withOpacity(0.1)
                                 : Colors.black.withOpacity(0.1),
                             onChanged: (value) {
-                              final newOption = FontSizeOption.values[value.toInt()];
+                              final newOption =
+                                  FontSizeOption.values[value.toInt()];
                               provider.setFontSizeOption(newOption);
                             },
                           ),
@@ -864,7 +877,9 @@ class SettingsScreen extends StatelessWidget {
                       '${option.displayName}${option == FontSizeOption.medium ? " (Default)" : ""}',
                       style: theme.textTheme.bodyMedium?.copyWith(
                         fontWeight: FontWeight.w600,
-                        color: isDark ? const Color(0xFF9C93C8) : Colors.grey[700],
+                        color: isDark
+                            ? const Color(0xFF9C93C8)
+                            : Colors.grey[700],
                       ),
                     ),
                   ],

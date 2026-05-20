@@ -5,10 +5,7 @@ import 'package:monolog/utils/constants.dart';
 void main() {
   group('Notebook', () {
     test('should create a notebook with required fields', () {
-      final notebook = Notebook(
-        title: 'Test Notebook',
-        color: '#6366F1',
-      );
+      final notebook = Notebook(title: 'Test Notebook', color: '#6366F1');
 
       expect(notebook.id, isNotNull);
       expect(notebook.title, 'Test Notebook');
@@ -64,8 +61,14 @@ void main() {
     test('should set default DateTime when not provided', () {
       final notebook = Notebook(title: 'Test Notebook', color: '#6366F1');
 
-      expect(notebook.createdAt.difference(DateTime.now()).inSeconds.abs(), lessThan(5));
-      expect(notebook.updatedAt.difference(DateTime.now()).inSeconds.abs(), lessThan(5));
+      expect(
+        notebook.createdAt.difference(DateTime.now()).inSeconds.abs(),
+        lessThan(5),
+      );
+      expect(
+        notebook.updatedAt.difference(DateTime.now()).inSeconds.abs(),
+        lessThan(5),
+      );
     });
 
     group('copyWith', () {
@@ -129,7 +132,10 @@ void main() {
           isDeleted: false,
         );
 
-        final updated = notebook.copyWith(isDeleted: true, deletedAt: DateTime.now());
+        final updated = notebook.copyWith(
+          isDeleted: true,
+          deletedAt: DateTime.now(),
+        );
 
         expect(updated.isDeleted, true);
         expect(updated.deletedAt, isNotNull);
@@ -143,7 +149,9 @@ void main() {
           entryStyle: NotebookEntryStyles.chat,
         );
 
-        final updated = notebook.copyWith(entryStyle: NotebookEntryStyles.classic);
+        final updated = notebook.copyWith(
+          entryStyle: NotebookEntryStyles.classic,
+        );
 
         expect(updated.entryStyle, NotebookEntryStyles.classic);
       });

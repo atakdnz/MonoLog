@@ -2,7 +2,7 @@ name: monolog
 description: "A journal-style note-taking app with messaging-style input"
 publish_to: 'none'
 
-version: 1.7.0+5
+version: 1.8.0+6
 
 environment:
   sdk: ^3.10.4
@@ -21,6 +21,8 @@ dependencies:
   path_provider: ^2.1.1
   image_picker: ^1.0.4
   file_picker: ^8.0.0
+  record: ^6.2.0
+  audioplayers: ^6.6.0
   
   # State Management
   provider: ^6.1.1

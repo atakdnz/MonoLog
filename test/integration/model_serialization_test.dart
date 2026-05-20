@@ -15,6 +15,8 @@ void main() {
           imagePath: '/path/to/image.jpg',
           annotationBaseImagePath: '/path/to/base.jpg',
           annotationStrokes: '[{"points":[]}]',
+          audioPath: '/path/to/audio.m4a',
+          audioDurationMs: 12345,
           displayTime: now,
           createdAt: now,
           updatedAt: now,
@@ -29,8 +31,13 @@ void main() {
         expect(restored.notebookId, original.notebookId);
         expect(restored.content, original.content);
         expect(restored.imagePath, original.imagePath);
-        expect(restored.annotationBaseImagePath, original.annotationBaseImagePath);
+        expect(
+          restored.annotationBaseImagePath,
+          original.annotationBaseImagePath,
+        );
         expect(restored.annotationStrokes, original.annotationStrokes);
+        expect(restored.audioPath, original.audioPath);
+        expect(restored.audioDurationMs, original.audioDurationMs);
         expect(restored.displayTime, original.displayTime);
         expect(restored.createdAt, original.createdAt);
         expect(restored.updatedAt, original.updatedAt);
@@ -48,6 +55,8 @@ void main() {
           imagePath: '/path/to/image.jpg',
           annotationBaseImagePath: '/path/to/base.jpg',
           annotationStrokes: '[{"points":[]}]',
+          audioPath: '/path/to/audio.m4a',
+          audioDurationMs: 12345,
           displayTime: now,
           createdAt: now,
           isStarred: true,
@@ -62,6 +71,8 @@ void main() {
         expect(restored.imagePath, 'image.jpg');
         expect(restored.annotationBaseImagePath, 'base.jpg');
         expect(restored.annotationStrokes, original.annotationStrokes);
+        expect(restored.audioPath, 'audio.m4a');
+        expect(restored.audioDurationMs, original.audioDurationMs);
         expect(restored.displayTime, original.displayTime);
         expect(restored.createdAt, original.createdAt);
         expect(restored.isStarred, original.isStarred);
@@ -181,20 +192,14 @@ void main() {
 
   group('Edge Cases', () {
     test('Entry with empty content should have hasContent false', () {
-      final entry = Entry(
-        notebookId: 'notebook-1',
-        content: '',
-      );
+      final entry = Entry(notebookId: 'notebook-1', content: '');
 
       expect(entry.hasContent, false);
       expect(entry.isEmpty, true);
     });
 
     test('Entry with only whitespace content should have hasContent true', () {
-      final entry = Entry(
-        notebookId: 'notebook-1',
-        content: '   ',
-      );
+      final entry = Entry(notebookId: 'notebook-1', content: '   ');
 
       expect(entry.hasContent, true);
       expect(entry.isEmpty, false);

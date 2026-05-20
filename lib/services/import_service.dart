@@ -85,6 +85,7 @@ class ImportService {
   }) async {
     final jsonData = _readArchiveJson(archive);
     final imageMap = await _extractImages(archive);
+    final audioMap = await _extractAudio(archive);
 
     // Import notebooks and entries
     final notebooksJson = jsonData['notebooks'] as List;
@@ -154,6 +155,11 @@ class ImportService {
               imageMap.containsKey(annotationBaseImageFilename)) {
             annotationBaseImagePath = imageMap[annotationBaseImageFilename];
           }
+          String? audioPath;
+          final audioFilename = entryData['audio_filename'] as String?;
+          if (audioFilename != null && audioMap.containsKey(audioFilename)) {
+            audioPath = audioMap[audioFilename];
+          }
 
           final entry = Entry(
             id: entryData['id'] as String,
@@ -162,6 +168,8 @@ class ImportService {
             imagePath: imagePath,
             annotationBaseImagePath: annotationBaseImagePath,
             annotationStrokes: entryData['annotation_strokes'] as String?,
+            audioPath: audioPath,
+            audioDurationMs: entryData['audio_duration_ms'] as int?,
             displayTime: DateTime.parse(entryData['display_time'] as String),
             createdAt: DateTime.parse(entryData['created_at'] as String),
             isStarred: entryData['is_starred'] as bool? ?? false,
@@ -212,6 +220,47 @@ class ImportService {
     return imageMap;
   }
 
+  Future<Map<String, String>> _extractAudio(Archive archive) async {
+    final appDir = await getApplicationDocumentsDirectory();
+    final audioDir = Directory(p.join(appDir.path, 'audio'));
+    if (!await audioDir.exists()) {
+      await audioDir.create(recursive: true);
+    }
+
+    final audioMap = <String, String>{};
+    for (final file in archive.files) {
+      if (file.name.startsWith('audio/') && file.isFile) {
+        final audioFilename = p.basename(file.name);
+        final localFilename =
+            '${DateTime.now().millisecondsSinceEpoch}_$audioFilename';
+        final localPath = p.join(audioDir.path, localFilename);
+
+        final audioFile = File(localPath);
+        await audioFile.writeAsBytes(file.content as List<int>);
+        audioMap[audioFilename] = localPath;
+      }
+    }
+
+    return audioMap;
+  }
+
+  String _remapClassicMediaTokens(String content, Map<String, String> idMap) {
+    final tokenPattern = RegExp(
+      r'(?:!\[MonoLog Image\]\(monolog-entry:([^)]+)\)|\[MonoLog Voice\]\(monolog-entry:([^)]+)\))',
+    );
+    return content.replaceAllMapped(tokenPattern, (match) {
+      final imageId = match.group(1);
+      final audioId = match.group(2);
+      if (imageId != null) {
+        return '![MonoLog Image](monolog-entry:${idMap[imageId] ?? imageId})';
+      }
+      if (audioId != null) {
+        return '[MonoLog Voice](monolog-entry:${idMap[audioId] ?? audioId})';
+      }
+      return match.group(0) ?? '';
+    });
+  }
+
   /// Import a single notebook from ZIP as a new notebook
   /// Used from Settings - creates a new notebook from the imported data
   Future<bool> importSingleNotebookAsNew() async {
@@ -237,26 +286,8 @@ class ImportService {
       final jsonString = utf8.decode(dataFile.content as List<int>);
       final jsonData = json.decode(jsonString) as Map<String, dynamic>;
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory(p.join(appDir.path, 'images'));
-      if (!await imagesDir.exists()) {
-        await imagesDir.create(recursive: true);
-      }
-
-      // Extract images
-      final imageMap = <String, String>{};
-      for (final file in archive.files) {
-        if (file.name.startsWith('images/') && file.isFile) {
-          final imageFilename = p.basename(file.name);
-          final localFilename =
-              '${DateTime.now().millisecondsSinceEpoch}_$imageFilename';
-          final localPath = p.join(imagesDir.path, localFilename);
-
-          final imageFile = File(localPath);
-          await imageFile.writeAsBytes(file.content as List<int>);
-          imageMap[imageFilename] = localPath;
-        }
-      }
+      final imageMap = await _extractImages(archive);
+      final audioMap = await _extractAudio(archive);
 
       final notebooksJson = jsonData['notebooks'] as List;
       if (notebooksJson.isEmpty) return false;
@@ -282,8 +313,16 @@ class ImportService {
       // Import entries with new notebook ID
       final entriesJson = notebookData['entries'] as List?;
       if (entriesJson != null) {
+        final idMap = <String, String>{};
         for (final entryJson in entriesJson) {
           final entryData = entryJson as Map<String, dynamic>;
+          final oldId = entryData['id'] as String;
+          idMap[oldId] = '${DateTime.now().millisecondsSinceEpoch}_$oldId';
+        }
+
+        for (final entryJson in entriesJson) {
+          final entryData = entryJson as Map<String, dynamic>;
+          final oldId = entryData['id'] as String;
 
           String? imagePath;
           final imageFilename = entryData['image_filename'] as String?;
@@ -297,14 +336,24 @@ class ImportService {
               imageMap.containsKey(annotationBaseImageFilename)) {
             annotationBaseImagePath = imageMap[annotationBaseImageFilename];
           }
+          String? audioPath;
+          final audioFilename = entryData['audio_filename'] as String?;
+          if (audioFilename != null && audioMap.containsKey(audioFilename)) {
+            audioPath = audioMap[audioFilename];
+          }
+          final content = entryData['content'] as String?;
 
           final entry = Entry(
-            id: '${DateTime.now().millisecondsSinceEpoch}_${entryData['id']}',
+            id: idMap[oldId],
             notebookId: newNotebook.id, // Use new notebook ID
-            content: entryData['content'] as String?,
+            content: content == null
+                ? null
+                : _remapClassicMediaTokens(content, idMap),
             imagePath: imagePath,
             annotationBaseImagePath: annotationBaseImagePath,
             annotationStrokes: entryData['annotation_strokes'] as String?,
+            audioPath: audioPath,
+            audioDurationMs: entryData['audio_duration_ms'] as int?,
             displayTime: DateTime.parse(entryData['display_time'] as String),
             createdAt: DateTime.parse(entryData['created_at'] as String),
             isStarred: entryData['is_starred'] as bool? ?? false,
@@ -346,26 +395,8 @@ class ImportService {
       final jsonString = utf8.decode(dataFile.content as List<int>);
       final jsonData = json.decode(jsonString) as Map<String, dynamic>;
 
-      final appDir = await getApplicationDocumentsDirectory();
-      final imagesDir = Directory(p.join(appDir.path, 'images'));
-      if (!await imagesDir.exists()) {
-        await imagesDir.create(recursive: true);
-      }
-
-      // Extract images
-      final imageMap = <String, String>{};
-      for (final file in archive.files) {
-        if (file.name.startsWith('images/') && file.isFile) {
-          final imageFilename = p.basename(file.name);
-          final localFilename =
-              '${DateTime.now().millisecondsSinceEpoch}_$imageFilename';
-          final localPath = p.join(imagesDir.path, localFilename);
-
-          final imageFile = File(localPath);
-          await imageFile.writeAsBytes(file.content as List<int>);
-          imageMap[imageFilename] = localPath;
-        }
-      }
+      final imageMap = await _extractImages(archive);
+      final audioMap = await _extractAudio(archive);
 
       final notebooksJson = jsonData['notebooks'] as List;
       if (notebooksJson.isEmpty) return false;
@@ -377,8 +408,17 @@ class ImportService {
         final entriesJson = notebookData['entries'] as List?;
 
         if (entriesJson != null) {
+          final idMap = <String, String>{};
           for (final entryJson in entriesJson) {
             final entryData = entryJson as Map<String, dynamic>;
+            final oldId = entryData['id'] as String;
+            idMap[oldId] =
+                '${DateTime.now().millisecondsSinceEpoch}_${importedCount}_$oldId';
+          }
+
+          for (final entryJson in entriesJson) {
+            final entryData = entryJson as Map<String, dynamic>;
+            final oldId = entryData['id'] as String;
 
             String? imagePath;
             final imageFilename = entryData['image_filename'] as String?;
@@ -392,15 +432,25 @@ class ImportService {
                 imageMap.containsKey(annotationBaseImageFilename)) {
               annotationBaseImagePath = imageMap[annotationBaseImageFilename];
             }
+            String? audioPath;
+            final audioFilename = entryData['audio_filename'] as String?;
+            if (audioFilename != null && audioMap.containsKey(audioFilename)) {
+              audioPath = audioMap[audioFilename];
+            }
+            final content = entryData['content'] as String?;
 
             // Create entry with new ID to avoid conflicts
             final entry = Entry(
-              id: '${DateTime.now().millisecondsSinceEpoch}_${importedCount}_${entryData['id']}',
+              id: idMap[oldId],
               notebookId: targetNotebookId, // Use target notebook ID
-              content: entryData['content'] as String?,
+              content: content == null
+                  ? null
+                  : _remapClassicMediaTokens(content, idMap),
               imagePath: imagePath,
               annotationBaseImagePath: annotationBaseImagePath,
               annotationStrokes: entryData['annotation_strokes'] as String?,
+              audioPath: audioPath,
+              audioDurationMs: entryData['audio_duration_ms'] as int?,
               displayTime: DateTime.parse(entryData['display_time'] as String),
               createdAt: DateTime.parse(entryData['created_at'] as String),
               isStarred: entryData['is_starred'] as bool? ?? false,

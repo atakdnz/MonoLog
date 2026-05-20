@@ -85,6 +85,7 @@ class ExportService {
             String,
             Map<String, String>
           >{}; // original path -> {filename, archivePath}
+      final audioToInclude = <String, Map<String, String>>{};
 
       // Build notebooks JSON
       final notebooks = <Map<String, dynamic>>[];
@@ -144,6 +145,29 @@ class ExportService {
             }
           }
 
+          if (entry.hasAudio) {
+            final audioFile = File(entry.audioPath!);
+            if (await audioFile.exists()) {
+              final dateStr = TimeUtils.formatDate(
+                entry.displayTime,
+              ).replaceAll('/', '-');
+              final timeStr = TimeUtils.getEntryTime(
+                entry.displayTime,
+              ).replaceAll(':', '-');
+              final ext = p.extension(entry.audioPath!).isEmpty
+                  ? '.m4a'
+                  : p.extension(entry.audioPath!);
+              final audioFilename =
+                  '${sanitizedNotebookName}_${dateStr}_$timeStr$ext';
+
+              audioToInclude[entry.audioPath!] = {
+                'filename': audioFilename,
+                'notebook': sanitizedNotebookName,
+              };
+              entryJson['audio_filename'] = audioFilename;
+            }
+          }
+
           entries.add(entryJson);
         }
 
@@ -178,6 +202,22 @@ class ExportService {
               'images/$notebookFolder/$filename',
               imageBytes.length,
               imageBytes,
+            ),
+          );
+        }
+      }
+
+      for (final entry in audioToInclude.entries) {
+        final audioFile = File(entry.key);
+        if (await audioFile.exists()) {
+          final audioBytes = await audioFile.readAsBytes();
+          final notebookFolder = entry.value['notebook']!;
+          final filename = entry.value['filename']!;
+          archive.addFile(
+            ArchiveFile(
+              'audio/$notebookFolder/$filename',
+              audioBytes.length,
+              audioBytes,
             ),
           );
         }

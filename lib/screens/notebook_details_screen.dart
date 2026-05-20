@@ -9,6 +9,7 @@ import '../providers/entries_provider.dart';
 import '../providers/notebooks_provider.dart';
 import '../services/export_service.dart';
 import '../services/import_service.dart';
+import '../widgets/audio_entry_player.dart';
 import '../utils/constants.dart';
 import '../utils/time_utils.dart';
 
@@ -146,6 +147,12 @@ class _InfoTab extends StatelessWidget {
             label: 'Images',
             value: stats.imageCount.toString(),
           ),
+        if (stats.audioCount > 0)
+          _InfoRow(
+            icon: Icons.mic_none,
+            label: 'Voice Notes',
+            value: stats.audioCount.toString(),
+          ),
         if (stats.starredCount > 0)
           _InfoRow(
             icon: Icons.star_outline,
@@ -180,13 +187,13 @@ class _GalleryTab extends StatelessWidget {
     final imageEntries = context
         .watch<EntriesProvider>()
         .entries
-        .where((entry) => entry.hasImage)
+        .where((entry) => entry.hasMedia)
         .toList();
 
     if (imageEntries.isEmpty) {
       return Center(
         child: Text(
-          'No images yet',
+          'No media yet',
           style: Theme.of(context).textTheme.titleMedium?.copyWith(
             color: Theme.of(
               context,
@@ -208,14 +215,29 @@ class _GalleryTab extends StatelessWidget {
         final entry = imageEntries[index];
         return GestureDetector(
           onTap: () => Navigator.pop(context, entry.id),
-          child: Image.file(
-            File(entry.imagePath!),
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) => Container(
-              color: Theme.of(context).colorScheme.surfaceContainerHighest,
-              child: const Icon(Icons.broken_image_outlined),
-            ),
-          ),
+          child: entry.hasImage
+              ? Image.file(
+                  File(entry.imagePath!),
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    child: const Icon(Icons.broken_image_outlined),
+                  ),
+                )
+              : Container(
+                  padding: const EdgeInsets.all(8),
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  child: Center(
+                    child: AudioEntryPlayer(
+                      audioPath: entry.audioPath!,
+                      durationMs: entry.audioDurationMs,
+                      accentColor: Theme.of(context).colorScheme.primary,
+                      compact: true,
+                    ),
+                  ),
+                ),
         );
       },
     );
@@ -504,12 +526,14 @@ class _NotebookStats {
   final int characterCount;
   final int wordCount;
   final int imageCount;
+  final int audioCount;
   final int starredCount;
 
   const _NotebookStats({
     required this.characterCount,
     required this.wordCount,
     required this.imageCount,
+    required this.audioCount,
     required this.starredCount,
   });
 
@@ -517,6 +541,7 @@ class _NotebookStats {
     var characterCount = 0;
     var wordCount = 0;
     var imageCount = 0;
+    var audioCount = 0;
     var starredCount = 0;
 
     for (final entry in entries) {
@@ -529,6 +554,7 @@ class _NotebookStats {
             .length;
       }
       if (entry.hasImage) imageCount++;
+      if (entry.hasAudio) audioCount++;
       if (entry.isStarred) starredCount++;
     }
 
@@ -536,6 +562,7 @@ class _NotebookStats {
       characterCount: characterCount,
       wordCount: wordCount,
       imageCount: imageCount,
+      audioCount: audioCount,
       starredCount: starredCount,
     );
   }

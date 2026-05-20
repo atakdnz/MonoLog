@@ -140,9 +140,7 @@ class _AppDrawerState extends State<AppDrawer> {
           controller: controller,
           autofocus: true,
           textCapitalization: TextCapitalization.sentences,
-          decoration: const InputDecoration(
-            labelText: 'Folder Name',
-          ),
+          decoration: const InputDecoration(labelText: 'Folder Name'),
         ),
         actions: [
           TextButton(
@@ -153,9 +151,9 @@ class _AppDrawerState extends State<AppDrawer> {
             onPressed: () async {
               final name = controller.text.trim();
               if (name.isEmpty) return;
-              await context
-                  .read<FoldersProvider>()
-                  .updateFolder(folder.copyWith(name: name));
+              await context.read<FoldersProvider>().updateFolder(
+                folder.copyWith(name: name),
+              );
               if (mounted) Navigator.pop(context);
             },
             child: const Text('Save'),
@@ -347,8 +345,8 @@ class _AppDrawerState extends State<AppDrawer> {
         color: isSelected
             ? theme.colorScheme.primary
             : isDark
-                ? Colors.grey[400]
-                : Colors.grey[600],
+            ? Colors.grey[400]
+            : Colors.grey[600],
       ),
       title: Text(
         label,
@@ -376,8 +374,8 @@ class _AppDrawerState extends State<AppDrawer> {
         color: isSelected
             ? theme.colorScheme.primary
             : isDark
-                ? Colors.grey[400]
-                : Colors.grey[600],
+            ? Colors.grey[400]
+            : Colors.grey[600],
       ),
       title: Text(
         folder.name,

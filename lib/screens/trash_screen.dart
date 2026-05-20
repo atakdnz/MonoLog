@@ -374,12 +374,14 @@ class _TrashScreenState extends State<TrashScreen> {
             borderRadius: BorderRadius.circular(8),
           ),
           child: Icon(
-            entry.hasImage ? Icons.image : Icons.note,
+            entry.hasAudio
+                ? Icons.mic_none
+                : (entry.hasImage ? Icons.image : Icons.note),
             color: Theme.of(context).colorScheme.onSurface.withAlpha(128),
           ),
         ),
         title: Text(
-          entry.content ?? '📷 Image',
+          entry.content ?? (entry.hasAudio ? 'Voice note' : 'Image'),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),

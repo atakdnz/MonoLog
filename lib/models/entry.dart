@@ -7,6 +7,8 @@ class Entry {
   final String? imagePath;
   final String? annotationBaseImagePath;
   final String? annotationStrokes;
+  final String? audioPath;
+  final int? audioDurationMs;
   final DateTime displayTime;
   final DateTime createdAt;
   final DateTime updatedAt;
@@ -21,6 +23,8 @@ class Entry {
     this.imagePath,
     this.annotationBaseImagePath,
     this.annotationStrokes,
+    this.audioPath,
+    this.audioDurationMs,
     DateTime? displayTime,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -40,6 +44,8 @@ class Entry {
     String? imagePath,
     String? annotationBaseImagePath,
     String? annotationStrokes,
+    String? audioPath,
+    int? audioDurationMs,
     DateTime? displayTime,
     DateTime? createdAt,
     DateTime? updatedAt,
@@ -50,6 +56,8 @@ class Entry {
     bool clearImagePath = false,
     bool clearAnnotationBaseImagePath = false,
     bool clearAnnotationStrokes = false,
+    bool clearAudioPath = false,
+    bool clearAudioDuration = false,
     bool clearDeletedAt = false,
   }) {
     return Entry(
@@ -63,6 +71,10 @@ class Entry {
       annotationStrokes: clearAnnotationStrokes
           ? null
           : (annotationStrokes ?? this.annotationStrokes),
+      audioPath: clearAudioPath ? null : (audioPath ?? this.audioPath),
+      audioDurationMs: clearAudioDuration
+          ? null
+          : (audioDurationMs ?? this.audioDurationMs),
       displayTime: displayTime ?? this.displayTime,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -81,6 +93,8 @@ class Entry {
       imagePath: map['image_path'] as String?,
       annotationBaseImagePath: map['annotation_base_image_path'] as String?,
       annotationStrokes: map['annotation_strokes'] as String?,
+      audioPath: map['audio_path'] as String?,
+      audioDurationMs: map['audio_duration_ms'] as int?,
       displayTime: DateTime.parse(map['display_time'] as String),
       createdAt: DateTime.parse(map['created_at'] as String),
       updatedAt: DateTime.parse(map['updated_at'] as String),
@@ -101,6 +115,8 @@ class Entry {
       'image_path': imagePath,
       'annotation_base_image_path': annotationBaseImagePath,
       'annotation_strokes': annotationStrokes,
+      'audio_path': audioPath,
+      'audio_duration_ms': audioDurationMs,
       'display_time': displayTime.toIso8601String(),
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt.toIso8601String(),
@@ -120,6 +136,8 @@ class Entry {
       annotationBaseImagePath:
           json['annotation_base_image_filename'] as String?,
       annotationStrokes: json['annotation_strokes'] as String?,
+      audioPath: json['audio_filename'] as String?,
+      audioDurationMs: json['audio_duration_ms'] as int?,
       displayTime: DateTime.parse(json['display_time'] as String),
       createdAt: DateTime.parse(json['created_at'] as String),
       updatedAt: json['updated_at'] != null
@@ -136,11 +154,13 @@ class Entry {
     return {
       'id': id,
       'content': content,
-      'image_filename': imagePath != null ? imagePath!.split('/').last : null,
-      'annotation_base_image_filename': annotationBaseImagePath != null
-          ? annotationBaseImagePath!.split('/').last
-          : null,
+      'image_filename': imagePath?.split('/').last,
+      'annotation_base_image_filename': annotationBaseImagePath
+          ?.split('/')
+          .last,
       'annotation_strokes': annotationStrokes,
+      'audio_filename': audioPath?.split('/').last,
+      'audio_duration_ms': audioDurationMs,
       'display_time': displayTime.toIso8601String(),
       'is_starred': isStarred,
       'created_at': createdAt.toIso8601String(),
@@ -153,6 +173,12 @@ class Entry {
   /// Check if the entry has an image
   bool get hasImage => imagePath != null && imagePath!.isNotEmpty;
 
+  /// Check if the entry has audio
+  bool get hasAudio => audioPath != null && audioPath!.isNotEmpty;
+
+  /// Check if the entry has image or audio media
+  bool get hasMedia => hasImage || hasAudio;
+
   /// Check if the entry has editable annotation layer data
   bool get hasEditableAnnotations =>
       annotationBaseImagePath != null &&
@@ -160,8 +186,8 @@ class Entry {
       annotationStrokes != null &&
       annotationStrokes!.isNotEmpty;
 
-  /// Check if the entry is empty (no content and no image)
-  bool get isEmpty => !hasContent && !hasImage;
+  /// Check if the entry is empty (no content and no media)
+  bool get isEmpty => !hasContent && !hasMedia;
 
   @override
   String toString() {

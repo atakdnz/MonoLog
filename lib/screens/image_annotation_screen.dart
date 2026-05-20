@@ -92,8 +92,10 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
 
   /// Convert a normalized [0,1] offset to layout-pixel coordinates.
   Offset _denormalize(Offset normalized, Size canvasSize) {
-    return Offset(normalized.dx * canvasSize.width,
-        normalized.dy * canvasSize.height);
+    return Offset(
+      normalized.dx * canvasSize.width,
+      normalized.dy * canvasSize.height,
+    );
   }
 
   /// Convert a layout-pixel offset to normalized [0,1] coordinates.
@@ -104,24 +106,21 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
 
   /// Denormalize an entire stroke to layout pixels.
   AnnotationStroke _denormalizeStroke(
-      AnnotationStroke stroke, Size canvasSize) {
+    AnnotationStroke stroke,
+    Size canvasSize,
+  ) {
     return AnnotationStroke(
-      points: stroke.points
-          .map((pt) => _denormalize(pt, canvasSize))
-          .toList(),
+      points: stroke.points.map((pt) => _denormalize(pt, canvasSize)).toList(),
       color: stroke.color,
       width: stroke.width * canvasSize.width,
     );
   }
 
   /// Normalize a stroke from layout pixels to [0,1].
-  AnnotationStroke _normalizeStroke(
-      AnnotationStroke stroke, Size canvasSize) {
+  AnnotationStroke _normalizeStroke(AnnotationStroke stroke, Size canvasSize) {
     if (canvasSize.width == 0 || canvasSize.height == 0) return stroke;
     return AnnotationStroke(
-      points: stroke.points
-          .map((pt) => _normalize(pt, canvasSize))
-          .toList(),
+      points: stroke.points.map((pt) => _normalize(pt, canvasSize)).toList(),
       color: stroke.color,
       width: stroke.width / canvasSize.width,
     );
@@ -129,13 +128,17 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
 
   /// Denormalize all strokes in the list.
   List<AnnotationStroke> _denormalizeAll(
-      List<AnnotationStroke> strokes, Size canvasSize) {
+    List<AnnotationStroke> strokes,
+    Size canvasSize,
+  ) {
     return strokes.map((s) => _denormalizeStroke(s, canvasSize)).toList();
   }
 
   /// Normalize all strokes in the list.
   List<AnnotationStroke> _normalizeAll(
-      List<AnnotationStroke> strokes, Size canvasSize) {
+    List<AnnotationStroke> strokes,
+    Size canvasSize,
+  ) {
     return strokes.map((s) => _normalizeStroke(s, canvasSize)).toList();
   }
 
@@ -275,13 +278,15 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
           _blankCanvasSize.width.toInt(),
           _blankCanvasSize.height.toInt(),
         );
-        final blankData =
-            await blankImage.toByteData(format: ui.ImageByteFormat.png);
+        final blankData = await blankImage.toByteData(
+          format: ui.ImageByteFormat.png,
+        );
         if (blankData != null) {
-          final blankPath = p.join(tempDir.path,
-              '${DateTime.now().millisecondsSinceEpoch}_blank_base.png');
-          await File(blankPath)
-              .writeAsBytes(blankData.buffer.asUint8List());
+          final blankPath = p.join(
+            tempDir.path,
+            '${DateTime.now().millisecondsSinceEpoch}_blank_base.png',
+          );
+          await File(blankPath).writeAsBytes(blankData.buffer.asUint8List());
           baseImagePath = blankPath;
         }
       }
@@ -383,8 +388,9 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
                                   // or orientation change) convert the stored
                                   // normalized strokes to layout-pixel space.
                                   if (_currentCanvasSize != size) {
-                                    WidgetsBinding.instance
-                                        .addPostFrameCallback((_) {
+                                    WidgetsBinding.instance.addPostFrameCallback((
+                                      _,
+                                    ) {
                                       if (!mounted) return;
                                       final oldSize = _currentCanvasSize;
                                       _currentCanvasSize = size;
@@ -392,8 +398,10 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
                                       // First layout — denormalize from [0,1].
                                       if (oldSize == Size.zero) {
                                         setState(() {
-                                          final denormalized =
-                                              _denormalizeAll(_strokes, size);
+                                          final denormalized = _denormalizeAll(
+                                            _strokes,
+                                            size,
+                                          );
                                           _strokes
                                             ..clear()
                                             ..addAll(denormalized);
@@ -402,10 +410,14 @@ class _ImageAnnotationScreenState extends State<ImageAnnotationScreen> {
                                         // Relayout — rescale from old size to
                                         // new size. Normalize then denormalize.
                                         setState(() {
-                                          final normalized =
-                                              _normalizeAll(_strokes, oldSize);
-                                          final denormalized =
-                                              _denormalizeAll(normalized, size);
+                                          final normalized = _normalizeAll(
+                                            _strokes,
+                                            oldSize,
+                                          );
+                                          final denormalized = _denormalizeAll(
+                                            normalized,
+                                            size,
+                                          );
                                           _strokes
                                             ..clear()
                                             ..addAll(denormalized);

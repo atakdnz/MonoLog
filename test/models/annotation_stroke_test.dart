@@ -61,25 +61,22 @@ void main() {
         expect(stroke.hitTest(const Offset(10, 10), 0.0), true);
       });
 
-      test('should return true when point is within radius of a stroke point', () {
-        final stroke = AnnotationStroke(
-          points: [
-            const Offset(0, 0),
-            const Offset(10, 10),
-          ],
-          color: Colors.red,
-          width: 5.0,
-        );
+      test(
+        'should return true when point is within radius of a stroke point',
+        () {
+          final stroke = AnnotationStroke(
+            points: [const Offset(0, 0), const Offset(10, 10)],
+            color: Colors.red,
+            width: 5.0,
+          );
 
-        expect(stroke.hitTest(const Offset(12, 12), 5.0), true);
-      });
+          expect(stroke.hitTest(const Offset(12, 12), 5.0), true);
+        },
+      );
 
       test('should return false when point is far from all stroke points', () {
         final stroke = AnnotationStroke(
-          points: [
-            const Offset(0, 0),
-            const Offset(10, 10),
-          ],
+          points: [const Offset(0, 0), const Offset(10, 10)],
           color: Colors.red,
           width: 5.0,
         );
@@ -87,31 +84,31 @@ void main() {
         expect(stroke.hitTest(const Offset(100, 100), 5.0), false);
       });
 
-      test('should return true when point is on line segment between points', () {
-        final stroke = AnnotationStroke(
-          points: [
-            const Offset(0, 0),
-            const Offset(100, 0),
-          ],
-          color: Colors.red,
-          width: 5.0,
-        );
+      test(
+        'should return true when point is on line segment between points',
+        () {
+          final stroke = AnnotationStroke(
+            points: [const Offset(0, 0), const Offset(100, 0)],
+            color: Colors.red,
+            width: 5.0,
+          );
 
-        expect(stroke.hitTest(const Offset(50, 0), 2.0), true);
-      });
+          expect(stroke.hitTest(const Offset(50, 0), 2.0), true);
+        },
+      );
 
-      test('should return false when point is near but not on line segment', () {
-        final stroke = AnnotationStroke(
-          points: [
-            const Offset(0, 0),
-            const Offset(100, 0),
-          ],
-          color: Colors.red,
-          width: 2.0,
-        );
+      test(
+        'should return false when point is near but not on line segment',
+        () {
+          final stroke = AnnotationStroke(
+            points: [const Offset(0, 0), const Offset(100, 0)],
+            color: Colors.red,
+            width: 2.0,
+          );
 
-        expect(stroke.hitTest(const Offset(50, 50), 2.0), false);
-      });
+          expect(stroke.hitTest(const Offset(50, 50), 2.0), false);
+        },
+      );
     });
 
     group('eraseAt', () {

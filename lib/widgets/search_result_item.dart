@@ -42,28 +42,42 @@ class SearchResultItem extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Image thumbnail if exists
-              if (entry.hasImage) ...[
+              // Media thumbnail if exists
+              if (entry.hasMedia) ...[
                 ClipRRect(
                   borderRadius: BorderRadius.circular(8),
-                  child: Image.file(
-                    File(entry.imagePath!),
-                    width: 48,
-                    height: 48,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) => Container(
-                      width: 48,
-                      height: 48,
-                      color: theme.colorScheme.surfaceContainerHighest,
-                      child: Icon(
-                        Icons.broken_image_outlined,
-                        size: 20,
-                        color: theme.colorScheme.onSurface.withValues(
-                          alpha: 0.5,
+                  child: entry.hasImage
+                      ? Image.file(
+                          File(entry.imagePath!),
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          errorBuilder: (context, error, stackTrace) =>
+                              Container(
+                                width: 48,
+                                height: 48,
+                                color:
+                                    theme.colorScheme.surfaceContainerHighest,
+                                child: Icon(
+                                  Icons.broken_image_outlined,
+                                  size: 20,
+                                  color: theme.colorScheme.onSurface.withValues(
+                                    alpha: 0.5,
+                                  ),
+                                ),
+                              ),
+                        )
+                      : Container(
+                          width: 48,
+                          height: 48,
+                          color: theme.colorScheme.surfaceContainerHighest,
+                          child: Icon(
+                            Icons.mic_none,
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.6,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                  ),
                 ),
                 const SizedBox(width: 12),
               ],
@@ -120,7 +134,7 @@ class SearchResultItem extends StatelessWidget {
                       )
                     else
                       Text(
-                        '📷 Image',
+                        entry.hasAudio ? 'Voice note' : 'Image',
                         style: contentStyle?.copyWith(
                           color: theme.colorScheme.onSurface.withValues(
                             alpha: 0.7,

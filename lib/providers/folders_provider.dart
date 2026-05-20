@@ -54,7 +54,11 @@ class FoldersProvider with ChangeNotifier {
     await loadFolders();
   }
 
-  Future<void> reorderFolders(List<Folder> list, int oldIndex, int newIndex) async {
+  Future<void> reorderFolders(
+    List<Folder> list,
+    int oldIndex,
+    int newIndex,
+  ) async {
     final Folder item = list.removeAt(oldIndex);
     list.insert(newIndex, item);
 

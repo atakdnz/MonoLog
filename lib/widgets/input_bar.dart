@@ -7,6 +7,7 @@ import '../models/annotation_stroke.dart';
 import '../screens/image_annotation_screen.dart';
 import '../services/annotation_metadata_service.dart';
 import '../utils/time_utils.dart';
+import 'voice_recorder_sheet.dart';
 
 class InputBar extends StatefulWidget {
   final Function(
@@ -15,6 +16,8 @@ class InputBar extends StatefulWidget {
     DateTime? customTime,
     String? annotationBaseImagePath,
     String? annotationStrokes,
+    String? audioPath,
+    int? audioDurationMs,
   )
   onSend;
   final bool enabled;
@@ -42,6 +45,8 @@ class _InputBarState extends State<InputBar> {
   String? _attachedImagePath;
   String? _annotationBaseImagePath;
   List<AnnotationStroke>? _annotationStrokes;
+  String? _attachedAudioPath;
+  int? _attachedAudioDurationMs;
   bool _isSending = false;
   DateTime? _selectedTime;
 
@@ -211,9 +216,38 @@ class _InputBarState extends State<InputBar> {
     });
   }
 
+  Future<void> _recordVoice() async {
+    final result = await showModalBottomSheet<VoiceRecordingResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (_) => const VoiceRecorderSheet(),
+    );
+
+    if (result == null || !mounted) return;
+    setState(() {
+      _attachedAudioPath = result.path;
+      _attachedAudioDurationMs = result.duration.inMilliseconds;
+    });
+  }
+
+  void _removeAudio() {
+    setState(() {
+      _attachedAudioPath = null;
+      _attachedAudioDurationMs = null;
+    });
+  }
+
   Future<void> _send() async {
     final text = _textController.text.trim();
-    if (text.isEmpty && _attachedImagePath == null) return;
+    if (text.isEmpty &&
+        _attachedImagePath == null &&
+        _attachedAudioPath == null) {
+      return;
+    }
 
     setState(() => _isSending = true);
 
@@ -226,12 +260,16 @@ class _InputBarState extends State<InputBar> {
         _annotationStrokes == null
             ? null
             : AnnotationMetadataService.encodeStrokes(_annotationStrokes!),
+        _attachedAudioPath,
+        _attachedAudioDurationMs,
       );
       _textController.clear();
       setState(() {
         _attachedImagePath = null;
         _annotationBaseImagePath = null;
         _annotationStrokes = null;
+        _attachedAudioPath = null;
+        _attachedAudioDurationMs = null;
         _selectedTime = null;
       });
     } finally {
@@ -291,7 +329,9 @@ class _InputBarState extends State<InputBar> {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
     final hasContent =
-        _textController.text.isNotEmpty || _attachedImagePath != null;
+        _textController.text.isNotEmpty ||
+        _attachedImagePath != null ||
+        _attachedAudioPath != null;
 
     const primary = Color(0xFF3b19e6);
 
@@ -437,6 +477,40 @@ class _InputBarState extends State<InputBar> {
                 ),
               ),
 
+            if (_attachedAudioPath != null)
+              Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: primary.withValues(alpha: 0.10),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: primary.withValues(alpha: 0.18)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.mic, color: primary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Voice note attached',
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: 'Remove voice note',
+                      visualDensity: VisualDensity.compact,
+                      onPressed: _removeAudio,
+                      icon: const Icon(Icons.close),
+                    ),
+                  ],
+                ),
+              ),
+
             // Input row
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
@@ -464,6 +538,17 @@ class _InputBarState extends State<InputBar> {
                     onPressed: widget.enabled ? _pickImage : null,
                     icon: Icon(
                       Icons.camera_alt_outlined,
+                      color: isDark
+                          ? const Color(0xFF9C93C8)
+                          : Colors.grey[600],
+                    ),
+                    visualDensity: VisualDensity.compact,
+                  ),
+
+                  IconButton(
+                    onPressed: widget.enabled ? _recordVoice : null,
+                    icon: Icon(
+                      Icons.mic_none,
                       color: isDark
                           ? const Color(0xFF9C93C8)
                           : Colors.grey[600],
@@ -510,7 +595,11 @@ class _InputBarState extends State<InputBar> {
                         textCapitalization: TextCapitalization.sentences,
                         style: TextStyle(
                           color: isDark ? Colors.white : Colors.black87,
-                          fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14.0) * Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
+                          fontSize:
+                              (theme.textTheme.bodyMedium?.fontSize ?? 14.0) *
+                              Provider.of<ThemeProvider>(
+                                context,
+                              ).fontSizeScaleFactor,
                         ),
                         decoration: InputDecoration(
                           hintText: 'Type your thoughts...',

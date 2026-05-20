@@ -26,6 +26,8 @@ void main() {
         imagePath: '/path/to/image.jpg',
         annotationBaseImagePath: '/path/to/base.jpg',
         annotationStrokes: '[{"points":[]}]',
+        audioPath: '/path/to/audio.m4a',
+        audioDurationMs: 12345,
         displayTime: now,
         createdAt: now,
         updatedAt: now,
@@ -39,6 +41,8 @@ void main() {
       expect(entry.imagePath, '/path/to/image.jpg');
       expect(entry.annotationBaseImagePath, '/path/to/base.jpg');
       expect(entry.annotationStrokes, '[{"points":[]}]');
+      expect(entry.audioPath, '/path/to/audio.m4a');
+      expect(entry.audioDurationMs, 12345);
       expect(entry.displayTime, now);
       expect(entry.createdAt, now);
       expect(entry.updatedAt, now);
@@ -58,9 +62,18 @@ void main() {
     test('should set default DateTime when not provided', () {
       final entry = Entry(notebookId: 'notebook-1');
 
-      expect(entry.displayTime.difference(DateTime.now()).inSeconds.abs(), lessThan(5));
-      expect(entry.createdAt.difference(DateTime.now()).inSeconds.abs(), lessThan(5));
-      expect(entry.updatedAt.difference(DateTime.now()).inSeconds.abs(), lessThan(5));
+      expect(
+        entry.displayTime.difference(DateTime.now()).inSeconds.abs(),
+        lessThan(5),
+      );
+      expect(
+        entry.createdAt.difference(DateTime.now()).inSeconds.abs(),
+        lessThan(5),
+      );
+      expect(
+        entry.updatedAt.difference(DateTime.now()).inSeconds.abs(),
+        lessThan(5),
+      );
     });
 
     group('copyWith', () {
@@ -102,29 +115,52 @@ void main() {
         expect(updated.imagePath, isNull);
       });
 
-      test('should clear annotationBaseImagePath when clearAnnotationBaseImagePath is true', () {
+      test('should clear audio fields when clear audio flags are true', () {
         final entry = Entry(
           id: 'entry-1',
           notebookId: 'notebook-1',
-          annotationBaseImagePath: '/path/to/base.jpg',
+          audioPath: '/path/to/audio.m4a',
+          audioDurationMs: 12345,
         );
 
-        final updated = entry.copyWith(clearAnnotationBaseImagePath: true);
-
-        expect(updated.annotationBaseImagePath, isNull);
-      });
-
-      test('should clear annotationStrokes when clearAnnotationStrokes is true', () {
-        final entry = Entry(
-          id: 'entry-1',
-          notebookId: 'notebook-1',
-          annotationStrokes: '[{"points":[]}]',
+        final updated = entry.copyWith(
+          clearAudioPath: true,
+          clearAudioDuration: true,
         );
 
-        final updated = entry.copyWith(clearAnnotationStrokes: true);
-
-        expect(updated.annotationStrokes, isNull);
+        expect(updated.audioPath, isNull);
+        expect(updated.audioDurationMs, isNull);
       });
+
+      test(
+        'should clear annotationBaseImagePath when clearAnnotationBaseImagePath is true',
+        () {
+          final entry = Entry(
+            id: 'entry-1',
+            notebookId: 'notebook-1',
+            annotationBaseImagePath: '/path/to/base.jpg',
+          );
+
+          final updated = entry.copyWith(clearAnnotationBaseImagePath: true);
+
+          expect(updated.annotationBaseImagePath, isNull);
+        },
+      );
+
+      test(
+        'should clear annotationStrokes when clearAnnotationStrokes is true',
+        () {
+          final entry = Entry(
+            id: 'entry-1',
+            notebookId: 'notebook-1',
+            annotationStrokes: '[{"points":[]}]',
+          );
+
+          final updated = entry.copyWith(clearAnnotationStrokes: true);
+
+          expect(updated.annotationStrokes, isNull);
+        },
+      );
 
       test('should clear deletedAt when clearDeletedAt is true', () {
         final entry = Entry(
@@ -158,7 +194,10 @@ void main() {
           isDeleted: false,
         );
 
-        final updated = entry.copyWith(isDeleted: true, deletedAt: DateTime.now());
+        final updated = entry.copyWith(
+          isDeleted: true,
+          deletedAt: DateTime.now(),
+        );
 
         expect(updated.isDeleted, true);
         expect(updated.deletedAt, isNotNull);
@@ -253,6 +292,8 @@ void main() {
           notebookId: 'notebook-1',
           content: 'Test content',
           imagePath: '/path/to/image.jpg',
+          audioPath: '/path/to/audio.m4a',
+          audioDurationMs: 12345,
           displayTime: now,
           createdAt: now,
           updatedAt: now,
@@ -266,6 +307,8 @@ void main() {
         expect(map['notebook_id'], 'notebook-1');
         expect(map['content'], 'Test content');
         expect(map['image_path'], '/path/to/image.jpg');
+        expect(map['audio_path'], '/path/to/audio.m4a');
+        expect(map['audio_duration_ms'], 12345);
         expect(map['is_starred'], 1);
         expect(map['is_deleted'], 0);
       });
@@ -304,6 +347,8 @@ void main() {
           'image_filename': 'image.jpg',
           'annotation_base_image_filename': 'base.jpg',
           'annotation_strokes': '[{"points":[]}]',
+          'audio_filename': 'audio.m4a',
+          'audio_duration_ms': 12345,
           'display_time': now.toIso8601String(),
           'is_starred': true,
           'created_at': now.toIso8601String(),
@@ -316,6 +361,8 @@ void main() {
         expect(entry.content, 'Test content');
         expect(entry.imagePath, 'image.jpg');
         expect(entry.annotationBaseImagePath, 'base.jpg');
+        expect(entry.audioPath, 'audio.m4a');
+        expect(entry.audioDurationMs, 12345);
         expect(entry.isStarred, true);
         expect(entry.isDeleted, false);
       });
@@ -350,6 +397,8 @@ void main() {
         expect(entry.imagePath, isNull);
         expect(entry.annotationBaseImagePath, isNull);
         expect(entry.annotationStrokes, isNull);
+        expect(entry.audioPath, isNull);
+        expect(entry.audioDurationMs, isNull);
       });
     });
 
@@ -361,6 +410,8 @@ void main() {
           notebookId: 'notebook-1',
           content: 'Test content',
           imagePath: '/path/to/image.jpg',
+          audioPath: '/path/to/audio.m4a',
+          audioDurationMs: 12345,
           displayTime: now,
           createdAt: now,
           isStarred: true,
@@ -371,6 +422,8 @@ void main() {
         expect(json['id'], 'entry-1');
         expect(json['content'], 'Test content');
         expect(json['image_filename'], 'image.jpg');
+        expect(json['audio_filename'], 'audio.m4a');
+        expect(json['audio_duration_ms'], 12345);
         expect(json['display_time'], now.toIso8601String());
         expect(json['is_starred'], true);
         expect(json['created_at'], now.toIso8601String());
@@ -413,28 +466,19 @@ void main() {
 
     group('getters', () {
       test('hasContent should return true when content is not empty', () {
-        final entry = Entry(
-          notebookId: 'notebook-1',
-          content: 'Some content',
-        );
+        final entry = Entry(notebookId: 'notebook-1', content: 'Some content');
 
         expect(entry.hasContent, true);
       });
 
       test('hasContent should return false when content is null', () {
-        final entry = Entry(
-          notebookId: 'notebook-1',
-          content: null,
-        );
+        final entry = Entry(notebookId: 'notebook-1', content: null);
 
         expect(entry.hasContent, false);
       });
 
       test('hasContent should return false when content is empty', () {
-        final entry = Entry(
-          notebookId: 'notebook-1',
-          content: '',
-        );
+        final entry = Entry(notebookId: 'notebook-1', content: '');
 
         expect(entry.hasContent, false);
       });
@@ -449,52 +493,71 @@ void main() {
       });
 
       test('hasImage should return false when imagePath is null', () {
-        final entry = Entry(
-          notebookId: 'notebook-1',
-          imagePath: null,
-        );
+        final entry = Entry(notebookId: 'notebook-1', imagePath: null);
 
         expect(entry.hasImage, false);
       });
 
       test('hasImage should return false when imagePath is empty', () {
-        final entry = Entry(
-          notebookId: 'notebook-1',
-          imagePath: '',
-        );
+        final entry = Entry(notebookId: 'notebook-1', imagePath: '');
 
         expect(entry.hasImage, false);
       });
 
-      test('hasEditableAnnotations should return true when both base image and strokes exist', () {
+      test('hasAudio should return true when audioPath is not empty', () {
         final entry = Entry(
           notebookId: 'notebook-1',
-          annotationBaseImagePath: '/path/to/base.jpg',
-          annotationStrokes: '[{"points":[]}]',
+          audioPath: '/path/to/audio.m4a',
         );
 
-        expect(entry.hasEditableAnnotations, true);
+        expect(entry.hasAudio, true);
+        expect(entry.hasMedia, true);
       });
 
-      test('hasEditableAnnotations should return false when base image is null', () {
-        final entry = Entry(
-          notebookId: 'notebook-1',
-          annotationBaseImagePath: null,
-          annotationStrokes: '[{"points":[]}]',
-        );
+      test('hasAudio should return false when audioPath is empty', () {
+        final entry = Entry(notebookId: 'notebook-1', audioPath: '');
 
-        expect(entry.hasEditableAnnotations, false);
+        expect(entry.hasAudio, false);
       });
 
-      test('hasEditableAnnotations should return false when strokes is null', () {
-        final entry = Entry(
-          notebookId: 'notebook-1',
-          annotationBaseImagePath: '/path/to/base.jpg',
-          annotationStrokes: null,
-        );
+      test(
+        'hasEditableAnnotations should return true when both base image and strokes exist',
+        () {
+          final entry = Entry(
+            notebookId: 'notebook-1',
+            annotationBaseImagePath: '/path/to/base.jpg',
+            annotationStrokes: '[{"points":[]}]',
+          );
 
-        expect(entry.hasEditableAnnotations, false);
-      });
+          expect(entry.hasEditableAnnotations, true);
+        },
+      );
+
+      test(
+        'hasEditableAnnotations should return false when base image is null',
+        () {
+          final entry = Entry(
+            notebookId: 'notebook-1',
+            annotationBaseImagePath: null,
+            annotationStrokes: '[{"points":[]}]',
+          );
+
+          expect(entry.hasEditableAnnotations, false);
+        },
+      );
+
+      test(
+        'hasEditableAnnotations should return false when strokes is null',
+        () {
+          final entry = Entry(
+            notebookId: 'notebook-1',
+            annotationBaseImagePath: '/path/to/base.jpg',
+            annotationStrokes: null,
+          );
+
+          expect(entry.hasEditableAnnotations, false);
+        },
+      );
 
       test('isEmpty should return true when no content and no image', () {
         final entry = Entry(
@@ -525,6 +588,16 @@ void main() {
 
         expect(entry.isEmpty, false);
       });
+
+      test('isEmpty should return false when has audio', () {
+        final entry = Entry(
+          notebookId: 'notebook-1',
+          content: null,
+          audioPath: '/path/to/audio.m4a',
+        );
+
+        expect(entry.isEmpty, false);
+      });
     });
 
     group('equality', () {
@@ -545,29 +618,17 @@ void main() {
       });
 
       test('should not be equal when ids differ', () {
-        final entry1 = Entry(
-          id: 'entry-1',
-          notebookId: 'notebook-1',
-        );
+        final entry1 = Entry(id: 'entry-1', notebookId: 'notebook-1');
 
-        final entry2 = Entry(
-          id: 'entry-2',
-          notebookId: 'notebook-1',
-        );
+        final entry2 = Entry(id: 'entry-2', notebookId: 'notebook-1');
 
         expect(entry1, isNot(entry2));
       });
 
       test('should have same hashCode when ids match', () {
-        final entry1 = Entry(
-          id: 'entry-1',
-          notebookId: 'notebook-1',
-        );
+        final entry1 = Entry(id: 'entry-1', notebookId: 'notebook-1');
 
-        final entry2 = Entry(
-          id: 'entry-1',
-          notebookId: 'notebook-2',
-        );
+        final entry2 = Entry(id: 'entry-1', notebookId: 'notebook-2');
 
         expect(entry1.hashCode, entry2.hashCode);
       });

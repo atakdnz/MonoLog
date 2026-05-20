@@ -26,7 +26,7 @@ class DatabaseHelper {
 
     return await openDatabase(
       path,
-      version: 8,
+      version: 9,
       onCreate: _onCreate,
       onUpgrade: _onUpgrade,
     );
@@ -70,6 +70,8 @@ class DatabaseHelper {
         image_path TEXT,
         annotation_base_image_path TEXT,
         annotation_strokes TEXT,
+        audio_path TEXT,
+        audio_duration_ms INTEGER,
         display_time TEXT NOT NULL,
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL,
@@ -134,9 +136,7 @@ class DatabaseHelper {
           updated_at TEXT NOT NULL
         )
       ''');
-      await db.execute(
-        'ALTER TABLE notebooks ADD COLUMN folder_id TEXT',
-      );
+      await db.execute('ALTER TABLE notebooks ADD COLUMN folder_id TEXT');
     }
     if (oldVersion < 7) {
       await db.execute(
@@ -151,6 +151,12 @@ class DatabaseHelper {
           updated_at TEXT NOT NULL
         )
       ''');
+    }
+    if (oldVersion < 9) {
+      await db.execute('ALTER TABLE entries ADD COLUMN audio_path TEXT');
+      await db.execute(
+        'ALTER TABLE entries ADD COLUMN audio_duration_ms INTEGER',
+      );
     }
   }
 
@@ -176,10 +182,10 @@ class DatabaseHelper {
   /// Update just the sort order of a notebook
   Future<void> updateNotebookSortOrder(String id, int sortOrder) async {
     final db = await database;
-    await db.rawUpdate(
-      'UPDATE notebooks SET sort_order = ? WHERE id = ?',
-      [sortOrder, id],
-    );
+    await db.rawUpdate('UPDATE notebooks SET sort_order = ? WHERE id = ?', [
+      sortOrder,
+      id,
+    ]);
   }
 
   /// Soft delete a notebook (move to trash)
@@ -229,7 +235,10 @@ class DatabaseHelper {
   }
 
   /// Get all notebooks (excluding archived and deleted)
-  Future<List<Notebook>> getNotebooks({bool includeArchived = false, String? folderId}) async {
+  Future<List<Notebook>> getNotebooks({
+    bool includeArchived = false,
+    String? folderId,
+  }) async {
     final db = await database;
     String where = includeArchived
         ? 'is_deleted = 0'
@@ -383,10 +392,10 @@ class DatabaseHelper {
   /// Update just the sort order of a folder
   Future<void> updateFolderSortOrder(String id, int sortOrder) async {
     final db = await database;
-    await db.rawUpdate(
-      'UPDATE folders SET sort_order = ? WHERE id = ?',
-      [sortOrder, id],
-    );
+    await db.rawUpdate('UPDATE folders SET sort_order = ? WHERE id = ?', [
+      sortOrder,
+      id,
+    ]);
   }
 
   /// Delete a folder (notebooks in it will have folder_id set to NULL)
@@ -841,15 +850,11 @@ class DatabaseHelper {
         whereArgs: [notebookId],
       );
     } else {
-      await db.insert(
-        'drafts',
-        {
-          'notebook_id': notebookId,
-          'content': content,
-          'updated_at': DateTime.now().toIso8601String(),
-        },
-        conflictAlgorithm: ConflictAlgorithm.replace,
-      );
+      await db.insert('drafts', {
+        'notebook_id': notebookId,
+        'content': content,
+        'updated_at': DateTime.now().toIso8601String(),
+      }, conflictAlgorithm: ConflictAlgorithm.replace);
     }
   }
 

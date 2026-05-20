@@ -18,11 +18,12 @@ class NotebookColors {
   ];
 
   static Color fromHex(String hex) {
-    return Color(int.parse(hex.replaceFirst('#', '0xFF')));
+    final normalized = hex.replaceFirst('#', '');
+    return Color(int.parse('FF$normalized', radix: 16));
   }
 
   static String toHex(Color color) {
-    return '#${color.value.toRadixString(16).substring(2).toUpperCase()}';
+    return '#${color.toARGB32().toRadixString(16).substring(2).toUpperCase()}';
   }
 
   static Color getDefault() => colors[0];

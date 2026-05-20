@@ -119,8 +119,8 @@ void main() {
       expect(appName, 'MonoLog');
     });
 
-    test('app version should be 1.5.1', () {
-      expect(appVersion, '1.5.1');
+    test('app version should be 1.7.0', () {
+      expect(appVersion, '1.7.0');
     });
 
     test('quick animation should be 200ms', () {

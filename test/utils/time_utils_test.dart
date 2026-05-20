@@ -107,19 +107,18 @@ void main() {
       });
 
       test('should return formatted date for same year', () {
-        final now = DateTime(2025, 6, 15);
-        final date = DateTime(2025, 1, 15);
+        final date = DateTime(DateTime.now().year, 1, 15);
         final result = TimeUtils.getDateHeader(date);
 
-        expect(result, 'Wednesday, Jan 15');
+        expect(result, contains('Jan 15'));
+        expect(result, isNot(contains('${date.year}')));
       });
 
       test('should include year for different year', () {
-        final now = DateTime(2026, 6, 15);
-        final date = DateTime(2025, 1, 15);
+        final date = DateTime(DateTime.now().year - 1, 1, 15);
         final result = TimeUtils.getDateHeader(date);
 
-        expect(result, 'Wednesday, Jan 15, 2025');
+        expect(result, contains('Jan 15, ${date.year}'));
       });
     });
 

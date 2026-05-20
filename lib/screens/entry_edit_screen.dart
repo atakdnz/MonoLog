@@ -8,6 +8,7 @@ import '../models/annotation_stroke.dart';
 import '../models/entry.dart';
 import '../providers/entries_provider.dart';
 import '../providers/notebooks_provider.dart';
+import '../providers/theme_provider.dart';
 import '../screens/image_annotation_screen.dart';
 import '../services/annotation_metadata_service.dart';
 import '../utils/constants.dart';
@@ -635,6 +636,9 @@ class _EntryEditScreenState extends State<EntryEditScreen> {
                 maxLines: null,
                 minLines: 5,
                 textCapitalization: TextCapitalization.sentences,
+                style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                  fontSize: (Theme.of(context).textTheme.bodyLarge?.fontSize ?? 16.0) * Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Write your entry...',
                   filled: true,

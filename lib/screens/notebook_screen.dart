@@ -11,6 +11,7 @@ import '../models/notebook.dart';
 import '../models/entry.dart';
 import '../providers/entries_provider.dart';
 import '../providers/notebooks_provider.dart';
+import '../providers/theme_provider.dart';
 import '../utils/constants.dart';
 import '../utils/time_utils.dart';
 import '../widgets/entry_bubble.dart';
@@ -1416,7 +1417,10 @@ class _NotebookScreenState extends State<NotebookScreen> with WidgetsBindingObse
                 textAlignVertical: TextAlignVertical.top,
                 keyboardType: TextInputType.multiline,
                 textCapitalization: TextCapitalization.sentences,
-                style: theme.textTheme.bodyLarge?.copyWith(height: 1.55),
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  height: 1.55,
+                  fontSize: (theme.textTheme.bodyLarge?.fontSize ?? 16.0) * Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
+                ),
                 decoration: InputDecoration(
                   hintText: 'Start writing...',
                   filled: true,

@@ -122,21 +122,34 @@ class SettingsScreen extends StatelessWidget {
                 final isDarkModeEnabled =
                     Theme.of(context).brightness == Brightness.dark;
 
-                return _buildSettingsItem(
-                  context: context,
-                  icon: isDarkModeEnabled ? Icons.dark_mode : Icons.light_mode,
-                  iconBg: iconBg,
-                  title: isDarkModeEnabled ? 'Dark Mode' : 'Light Mode',
-                  subtitle: 'Switch between Light and Dark',
-                  trailing: Switch.adaptive(
-                    value: isDarkModeEnabled,
-                    onChanged: (value) {
-                      themeProvider.setThemeMode(
-                        value ? ThemeMode.dark : ThemeMode.light,
-                      );
-                    },
-                    activeColor: primary,
-                  ),
+                return Column(
+                  children: [
+                    _buildSettingsItem(
+                      context: context,
+                      icon: isDarkModeEnabled ? Icons.dark_mode : Icons.light_mode,
+                      iconBg: iconBg,
+                      title: isDarkModeEnabled ? 'Dark Mode' : 'Light Mode',
+                      subtitle: 'Switch between Light and Dark',
+                      trailing: Switch.adaptive(
+                        value: isDarkModeEnabled,
+                        onChanged: (value) {
+                          themeProvider.setThemeMode(
+                            value ? ThemeMode.dark : ThemeMode.light,
+                          );
+                        },
+                        activeColor: primary,
+                      ),
+                    ),
+                    _buildDivider(context),
+                    _buildSettingsItem(
+                      context: context,
+                      icon: Icons.text_fields,
+                      iconBg: iconBg,
+                      title: 'Font Size',
+                      subtitle: themeProvider.fontSizeOption.displayName,
+                      onTap: () => _showFontSizeBottomSheet(context, themeProvider),
+                    ),
+                  ],
                 );
               },
             ),
@@ -709,5 +722,158 @@ class SettingsScreen extends StatelessWidget {
         context,
       ).showSnackBar(SnackBar(content: Text('Import failed: $e')));
     }
+  }
+
+  void _showFontSizeBottomSheet(BuildContext context, ThemeProvider themeProvider) {
+    final theme = Theme.of(context);
+    final isDark = theme.brightness == Brightness.dark;
+    const primary = Color(0xFF3b19e6);
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: theme.colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return Consumer<ThemeProvider>(
+          builder: (context, provider, _) {
+            final scale = provider.fontSizeScaleFactor;
+            final option = provider.fontSizeOption;
+
+            return SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Handle
+                    Container(
+                      width: 36,
+                      height: 4,
+                      margin: const EdgeInsets.only(bottom: 20),
+                      decoration: BoxDecoration(
+                        color: isDark ? Colors.white24 : Colors.black12,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+
+                    // Title
+                    Text(
+                      'Font Size',
+                      style: theme.textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Preview Bubble Card
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: isDark ? const Color(0xFF141121) : const Color(0xFFF6F6F8),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.05)
+                              : Colors.black.withOpacity(0.05),
+                        ),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'PREVIEW',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: isDark ? Colors.white38 : Colors.black38,
+                              letterSpacing: 1.2,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Align(
+                            alignment: Alignment.centerRight,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                              decoration: BoxDecoration(
+                                color: isDark ? primary : primary.withOpacity(0.12),
+                                borderRadius: const BorderRadius.only(
+                                  topLeft: Radius.circular(18),
+                                  topRight: Radius.circular(18),
+                                  bottomLeft: Radius.circular(18),
+                                  bottomRight: Radius.circular(4),
+                                ),
+                              ),
+                              child: Text(
+                                'This is a preview of the text size. Slide below to adjust.',
+                                style: TextStyle(
+                                  fontSize: 14.0 * scale,
+                                  color: isDark ? Colors.white : const Color(0xFF1F1B2E),
+                                  height: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+
+                    // Slider controls (A- on left, A+ on right)
+                    Row(
+                      children: [
+                        Text(
+                          'A',
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.w400,
+                            color: isDark ? Colors.white70 : Colors.black54,
+                          ),
+                        ),
+                        Expanded(
+                          child: Slider.adaptive(
+                            value: option.index.toDouble(),
+                            min: 0.0,
+                            max: (FontSizeOption.values.length - 1).toDouble(),
+                            divisions: FontSizeOption.values.length - 1,
+                            activeColor: primary,
+                            inactiveColor: isDark
+                                ? Colors.white.withOpacity(0.1)
+                                : Colors.black.withOpacity(0.1),
+                            onChanged: (value) {
+                              final newOption = FontSizeOption.values[value.toInt()];
+                              provider.setFontSizeOption(newOption);
+                            },
+                          ),
+                        ),
+                        Text(
+                          'A',
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    // Selected size label
+                    Text(
+                      '${option.displayName}${option == FontSizeOption.medium ? " (Default)" : ""}',
+                      style: theme.textTheme.bodyMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        color: isDark ? const Color(0xFF9C93C8) : Colors.grey[700],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 }

@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../models/entry.dart';
+import '../providers/theme_provider.dart';
 import '../utils/constants.dart';
 import '../utils/time_utils.dart';
 
@@ -24,6 +26,10 @@ class SearchResultItem extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final color = NotebookColors.fromHex(notebookColor);
+    final fontScale = context.watch<ThemeProvider>().fontSizeScaleFactor;
+    final contentStyle = theme.textTheme.bodyMedium?.copyWith(
+      fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14.0) * fontScale,
+    );
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -45,14 +51,16 @@ class SearchResultItem extends StatelessWidget {
                     width: 48,
                     height: 48,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, __, ___) => Container(
+                    errorBuilder: (context, error, stackTrace) => Container(
                       width: 48,
                       height: 48,
                       color: theme.colorScheme.surfaceContainerHighest,
                       child: Icon(
                         Icons.broken_image_outlined,
                         size: 20,
-                        color: theme.colorScheme.onSurface.withOpacity(0.5),
+                        color: theme.colorScheme.onSurface.withValues(
+                          alpha: 0.5,
+                        ),
                       ),
                     ),
                   ),
@@ -74,7 +82,7 @@ class SearchResultItem extends StatelessWidget {
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
-                            color: color.withOpacity(0.15),
+                            color: color.withValues(alpha: 0.15),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -93,7 +101,9 @@ class SearchResultItem extends StatelessWidget {
                         Text(
                           TimeUtils.getRelativeTime(entry.displayTime),
                           style: theme.textTheme.labelSmall?.copyWith(
-                            color: theme.colorScheme.onSurface.withOpacity(0.5),
+                            color: theme.colorScheme.onSurface.withValues(
+                              alpha: 0.5,
+                            ),
                           ),
                         ),
                       ],
@@ -102,12 +112,19 @@ class SearchResultItem extends StatelessWidget {
 
                     // Content with highlighted query
                     if (entry.hasContent)
-                      _buildHighlightedText(entry.content!, query, theme)
+                      _buildHighlightedText(
+                        entry.content!,
+                        query,
+                        theme,
+                        contentStyle,
+                      )
                     else
                       Text(
                         '📷 Image',
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurface.withOpacity(0.7),
+                        style: contentStyle?.copyWith(
+                          color: theme.colorScheme.onSurface.withValues(
+                            alpha: 0.7,
+                          ),
                           fontStyle: FontStyle.italic,
                         ),
                       ),
@@ -121,13 +138,18 @@ class SearchResultItem extends StatelessWidget {
     );
   }
 
-  Widget _buildHighlightedText(String text, String query, ThemeData theme) {
+  Widget _buildHighlightedText(
+    String text,
+    String query,
+    ThemeData theme,
+    TextStyle? contentStyle,
+  ) {
     if (query.isEmpty) {
       return Text(
         text,
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
-        style: theme.textTheme.bodyMedium,
+        style: contentStyle,
       );
     }
 
@@ -142,10 +164,7 @@ class SearchResultItem extends StatelessWidget {
       // Add text before match
       if (index > start) {
         spans.add(
-          TextSpan(
-            text: text.substring(start, index),
-            style: theme.textTheme.bodyMedium,
-          ),
+          TextSpan(text: text.substring(start, index), style: contentStyle),
         );
       }
 
@@ -153,8 +172,8 @@ class SearchResultItem extends StatelessWidget {
       spans.add(
         TextSpan(
           text: text.substring(index, index + query.length),
-          style: theme.textTheme.bodyMedium?.copyWith(
-            backgroundColor: Colors.yellow.withOpacity(0.3),
+          style: contentStyle?.copyWith(
+            backgroundColor: Colors.yellow.withValues(alpha: 0.3),
             fontWeight: FontWeight.w600,
           ),
         ),
@@ -166,12 +185,7 @@ class SearchResultItem extends StatelessWidget {
 
     // Add remaining text
     if (start < text.length) {
-      spans.add(
-        TextSpan(
-          text: text.substring(start),
-          style: theme.textTheme.bodyMedium,
-        ),
-      );
+      spans.add(TextSpan(text: text.substring(start), style: contentStyle));
     }
 
     return RichText(

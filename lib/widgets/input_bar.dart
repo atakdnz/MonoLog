@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/annotation_stroke.dart';
 import '../screens/image_annotation_screen.dart';
 import '../services/annotation_metadata_service.dart';
@@ -508,6 +510,7 @@ class _InputBarState extends State<InputBar> {
                         textCapitalization: TextCapitalization.sentences,
                         style: TextStyle(
                           color: isDark ? Colors.white : Colors.black87,
+                          fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14.0) * Provider.of<ThemeProvider>(context).fontSizeScaleFactor,
                         ),
                         decoration: InputDecoration(
                           hintText: 'Type your thoughts...',

@@ -1,7 +1,7 @@
 import 'dart:io';
-
 import 'package:flutter/material.dart';
-
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import '../models/entry.dart';
 import '../utils/time_utils.dart';
 
@@ -35,6 +35,7 @@ class EntryBubble extends StatelessWidget {
     final isDark = theme.brightness == Brightness.dark;
     final bubbleColor = notebookColor ?? const Color(0xFF3b19e6);
     final bubbleColorLight = Color.lerp(bubbleColor, Colors.white, 0.85)!;
+    final scaleFactor = Provider.of<ThemeProvider>(context).fontSizeScaleFactor;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -90,6 +91,7 @@ class EntryBubble extends StatelessWidget {
                               entry.content!,
                               theme.textTheme.bodyMedium?.copyWith(
                                 height: 1.5,
+                                fontSize: (theme.textTheme.bodyMedium?.fontSize ?? 14.0) * scaleFactor,
                                 color: isDark
                                     ? Colors.white
                                     : const Color(0xFF1F1B2E),
